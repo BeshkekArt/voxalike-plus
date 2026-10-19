@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Voxalike+",
+  "version": "1.1.1",
+  "description": "Улучшения для Voxalike: две дорожки со сдвигом, питч и громкость, усиление микрофона, отсчёт 3-2-1, буфер записи, запись всех своих реплик заранее с авто-отправкой.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_title": "Voxalike+",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://voxalike.com/*", "https://www.voxalike.com/*"],
+      "js": ["vxp-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "voxalike-plus@beshkek.art",
+      "strict_min_version": "128.0",
+      "data_collection_permissions": { "required": ["none"] }
+    }
+  }
+}
