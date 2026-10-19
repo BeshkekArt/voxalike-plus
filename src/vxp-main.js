@@ -18,7 +18,7 @@
 (() => {
   'use strict';
   if (window.__VXP__) return;
-  const VERSION = '1.1.1';
+  const VERSION = '1.2.0';
   const VXP = (window.__VXP__ = { version: VERSION });
   const IS_FF = /firefox/i.test(navigator.userAgent);
 
@@ -56,7 +56,7 @@
   /*  Настройки                                                          */
   /* ================================================================== */
   const SKEY = 'vxp:settings:v1';
-  const DEF_FX = { pitch: 0, gain: 0, lowcut: false };
+  const DEF_FX = { pitch: 0, gain: 0, lowcut: false, speed: 1, underwater: false, echo: false };
   const settings = Object.assign(
     {
       gainDb: 0, monitorSelf: false, monitorVol: 0.8, rawMic: true,
@@ -220,30 +220,107 @@
     return timeStretch(y, p, x.length, sr);
   }
 
-  /* ---------- модель дубля (неразрушающая обработка) ---------- */
-  // model = { base:Float32Array, sr, t0 (сек, позиция base[0] относительно старта видео),
-  //           outLen (сэмплов в окне для игры), params:{offset,pitch,gain,lowcut} }
-  const defaultParams = () => ({ offset: 0, ...settings.fx });
-  const isDefaultParams = (p) => !p.offset && !p.pitch && !p.gain && !p.lowcut;
-  function processed(model) {
-    const p = model.params, key = p.pitch + '|' + p.gain + '|' + (p.lowcut ? 1 : 0);
-    if (model._ck === key && model._cp) return model._cp;
-    let x = model.base;
-    if (p.pitch) x = pitchShift(x, model.sr, p.pitch);
-    if (p.lowcut) x = highpass(x, model.sr);
-    if (p.gain) {
-      const g = dbToLin(p.gain), y = new Float32Array(x.length);
-      for (let i = 0; i < x.length; i++) y[i] = x[i] * g;
-      x = y;
+  function lowpass(x, sr, f0 = 700, Q = 0.8) {
+    const w0 = (2 * Math.PI * f0) / sr, c = Math.cos(w0), al = Math.sin(w0) / (2 * Q);
+    const a0 = 1 + al, b0 = (1 - c) / 2 / a0, b1 = (1 - c) / a0, b2 = b0, a1 = (-2 * c) / a0, a2 = (1 - al) / a0;
+    const y = new Float32Array(x.length);
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) {
+      const v = b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+      x2 = x1; x1 = x[i]; y2 = y1; y1 = v; y[i] = v;
     }
-    const pk = peakOf(x);
-    if (pk > 0.98) { const y = x === model.base ? new Float32Array(x) : x; const k = 0.98 / pk; for (let i = 0; i < y.length; i++) y[i] *= k; x = y; }
-    model._ck = key; model._cp = x;
+    return y;
+  }
+  /** «Под водой»: плавающая задержка (лёгкое вибрато) + глухой фильтр. */
+  function underwater(x, sr) {
+    const n = x.length, y = new Float32Array(n), base = 0.007 * sr, depth = 0.0035 * sr, w = (2 * Math.PI * 0.8) / sr;
+    for (let i = 0; i < n; i++) {
+      const p = i - (base + depth * Math.sin(w * i)), a = Math.floor(p), f = p - a;
+      const s0 = a >= 0 && a < n ? x[a] : 0, s1 = a + 1 >= 0 && a + 1 < n ? x[a + 1] : 0;
+      y[i] = 0.75 * (s0 * (1 - f) + s1 * f) + 0.25 * x[i];
+    }
+    return lowpass(lowpass(y, sr, 650, 0.9), sr, 900, 0.7);
+  }
+  /** Небольшое эхо: задержка 180 мс с затуханием. */
+  function echo(x, sr, delaySec = 0.18, fb = 0.33, mix = 0.32) {
+    const D = Math.round(delaySec * sr), n = x.length, d = new Float32Array(n), y = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const v = i >= D ? x[i - D] + fb * d[i - D] : 0;
+      d[i] = v; y[i] = x[i] + mix * v;
+    }
+    return y;
+  }
+
+  /* ---------- модель дубля (неразрушающая обработка и монтаж) ---------- */
+  // model = { base:Float32Array, sr, t0 (сек, где base[0] относительно старта видео),
+  //           outLen (сэмплов в окне для игры),
+  //           params:{offset, pitch, gain, lowcut, speed, underwater, echo},
+  //           segs:[{id, a, b, pos}] — куски base[a..b), стоящие на таймлайне с позиции pos (сек) }
+  const FX_KEYS = ['pitch', 'gain', 'lowcut', 'speed', 'underwater', 'echo'];
+  const defaultParams = () => ({ offset: 0, ...settings.fx });
+  const isDefaultParams = (p) => !p.offset && !p.pitch && !p.gain && !p.lowcut && (p.speed || 1) === 1 && !p.underwater && !p.echo;
+  let segSeq = 1;
+  const segSig = (m) => JSON.stringify(m.segs.map((s) => [s.a, s.b, +s.pos.toFixed(5)]));
+  function initSegs(m) {
+    m.segs = [{ id: segSeq++, a: 0, b: m.base.length, pos: m.t0 }];
+    m._segInit = segSig(m);
+    m._sc = null; m._r = null;
+    return m.segs;
+  }
+  const ensureSegs = (m) => m.segs || initSegs(m);
+  const segsPristine = (m) => !m.segs || segSig(m) === m._segInit;
+  const isDefaultModel = (m) => isDefaultParams(m.params) && segsPristine(m);
+  const segDur = (m, s) => (s.b - s.a) / m.sr / (m.params.speed || 1);
+  /** Звук куска с учётом скорости (темп без изменения высоты). */
+  function segAudio(m, s) {
+    const sp = m.params.speed || 1, key = s.a + '|' + s.b + '|' + sp;
+    if (!m._sc || m._scBase !== m.base) { m._sc = new Map(); m._scBase = m.base; }
+    let x = m._sc.get(key);
+    if (!x) {
+      x = sp === 1 ? m.base.subarray(s.a, s.b) : timeStretch(m.base.slice(s.a, s.b), 1 / sp, Math.max(1, Math.round((s.b - s.a) / sp)), m.sr);
+      if (m._sc.size > 80) m._sc.clear();
+      m._sc.set(key, x);
+    }
     return x;
   }
-  const renderModel = (model) => shiftSamples(processed(model), model.sr, model.t0 * 1000 + model.params.offset, model.outLen);
-  const modelView = (model) => ({ samples: processed(model), sr: model.sr, t0: model.t0, winEnd: model.outLen / model.sr });
-  VXP.dsp = { pitchShift, timeStretch, highpass, renderModel, autoAlign, locate };
+  /** Собрать куски на таймлайн в окно [fromSec, fromSec + len/sr). Края кусков — короткие фейды без щелчков. */
+  function assemble(m, fromSec, len, withOffset = true) {
+    const out = new Float32Array(len), off = withOffset ? m.params.offset / 1000 : 0, sr = m.sr;
+    for (const s of ensureSegs(m)) {
+      const x = segAudio(m, s), L = x.length, start = Math.round((s.pos + off - fromSec) * sr);
+      const fade = Math.min(Math.round(0.004 * sr), L >> 1);
+      const i0 = Math.max(0, -start), i1 = Math.min(L, len - start);
+      for (let i = i0; i < i1; i++) {
+        let g = 1;
+        if (i < fade) g = i / fade; else if (i > L - fade) g = (L - i) / fade;
+        out[start + i] += x[i] * g;
+      }
+    }
+    return out;
+  }
+  function renderModel(m) {
+    const p = m.params, key = segSig({ segs: ensureSegs(m) }) + JSON.stringify(p) + m.outLen + '|' + m.base.length;
+    if (m._rk === key && m._r) return m._r;
+    let x = assemble(m, 0, m.outLen);
+    if (p.pitch) x = pitchShift(x, m.sr, p.pitch);
+    if (p.lowcut) x = highpass(x, m.sr);
+    if (p.underwater) x = underwater(x, m.sr);
+    if (p.echo) x = echo(x, m.sr);
+    if (p.gain) { const g = dbToLin(p.gain); for (let i = 0; i < x.length; i++) x[i] *= g; }
+    const pk = peakOf(x);
+    if (pk > 0.98) { const k = 0.98 / pk; for (let i = 0; i < x.length; i++) x[i] *= k; }
+    m._rk = key; m._r = x;
+    return x;
+  }
+  /** Сдвиг (мс), при котором собранная дорожка лучше всего совпадает с оригиналом. */
+  function alignOffset(m, ref) {
+    let lo = Infinity, hi = -Infinity;
+    for (const s of ensureSegs(m)) { lo = Math.min(lo, s.pos); hi = Math.max(hi, s.pos + segDur(m, s)); }
+    if (!isFinite(lo)) return m.params.offset;
+    const wide = assemble(m, lo, Math.max(1, Math.round((hi - lo) * m.sr)), false);
+    return autoAlign(ref.samples, ref.sr, wide, m.sr, lo);
+  }
+  VXP.dsp = { pitchShift, timeStretch, highpass, lowpass, underwater, echo, renderModel, assemble, autoAlign, alignOffset, locate, initSegs, segsPristine, isDefaultModel };
 
   /* ================================================================== */
   /*  Перехват ввода микрофона: усиление, мониторинг, детект записи      */
@@ -598,78 +675,192 @@ registerProcessor('vxp-rec',VxpRec);`;
   /*  Редактор двух дорожек                                             */
   /* ================================================================== */
   class TrackEditor {
-    constructor({ onOffset, onPlay }) {
-      this.ref = null; this.take = null; this.live = null; this.offset = 0; this.playhead = null;
-      this.onOffset = onOffset; this.onPlay = onPlay;
-      this.canvas = h('canvas', { class: 'vxp-tracks', title: 'Перетащите красную дорожку влево/вправо' });
+    /** onChange(kind) — модель изменена (kind: move | offset | cut | delete | undo | reset | auto) */
+    constructor({ onChange, onPlay }) {
+      this.ref = null; this.model = null; this.live = null; this.playhead = null;
+      this.sel = new Set(); this.tool = 'move'; this.hist = []; this.hoverT = null;
+      this.onChange = onChange; this.onPlay = onPlay;
+      this.canvas = h('canvas', { class: 'vxp-tracks', tabindex: '0', title: 'Клик — выбрать кусок, тянуть — двигать. Ножницы — разрезать. Delete — удалить, Ctrl+Z — отменить' });
       this.label = h('span', { class: 'vxp-offset' }, fmtMs(0));
-      const nudge = (d) => this.setOffset(this.offset + d, true);
-      this.btnPlay = h('button', { class: 'vxp-btn', type: 'button', title: 'Оригинал + моя запись вместе', onclick: () => this.onPlay && this.onPlay() }, '▶ Вместе');
-      this.toolbar = h('div', { class: 'vxp-row vxp-editbar' },
-        h('button', { class: 'vxp-btn icon', type: 'button', title: 'Сдвинуть влево (−10 мс, Shift −50)', onclick: (e) => nudge(e.shiftKey ? -50 : -10) }, '◀'),
-        this.label,
-        h('button', { class: 'vxp-btn icon', type: 'button', title: 'Сдвинуть вправо (+10 мс, Shift +50)', onclick: (e) => nudge(e.shiftKey ? 50 : 10) }, '▶'),
-        h('button', { class: 'vxp-btn', type: 'button', title: 'Автоподгонка к оригиналу', onclick: () => this.auto() }, 'Авто'),
-        h('button', { class: 'vxp-btn icon', type: 'button', title: 'Сбросить сдвиг', onclick: () => this.setOffset(0, true) }, '⟲'),
-        this.btnPlay);
+      const B = (txt, title, fn, cls = 'icon') => h('button', { class: 'vxp-btn ' + cls, type: 'button', title, onclick: fn }, txt);
+      this.btnMove = B('↔', 'Выбор и перемещение кусков (V). Shift+клик — выбрать несколько', () => this.setTool('move'));
+      this.btnCut = B('✂', 'Ножницы: клик по своей дорожке — разрезать (S)', () => this.setTool('cut'));
+      this.btnDel = B('🗑', 'Удалить выбранные куски (Delete)', () => this.deleteSel());
+      this.btnUndo = B('↶', 'Отменить (Ctrl+Z)', () => this.undo());
+      this.btnReset = B('⟲', 'Сбросить монтаж и сдвиг', () => this.resetEdit());
+      this.btnPlay = B('▶ Вместе', 'Оригинал + моя запись вместе', () => this.onPlay && this.onPlay(), '');
+      this.toolbar = h('div', { class: 'vxp-editbar' },
+        h('div', { class: 'vxp-row vxp-tools' }, this.btnMove, this.btnCut, this.btnDel, this.btnUndo, this.btnReset),
+        h('div', { class: 'vxp-row vxp-tools' },
+          B('◀', 'Сдвинуть влево (−10 мс, Shift −50). Если выбраны куски — только их', (e) => this.nudge(e.shiftKey ? -50 : -10)),
+          this.label,
+          B('▶', 'Сдвинуть вправо (+10 мс, Shift +50). Если выбраны куски — только их', (e) => this.nudge(e.shiftKey ? 50 : 10)),
+          B('Авто', 'Автоподгонка к оригиналу', () => this.auto(), ''),
+          this.btnPlay));
       this.root = h('div', { class: 'vxp-editor' }, this.canvas, this.toolbar);
-      this.bindDrag();
+      this.bindPointer();
+      this.canvas.addEventListener('keydown', (e) => { if (this.handleKey(e)) { e.preventDefault(); e.stopPropagation(); } });
       new ResizeObserver(() => this.draw()).observe(this.canvas);
       this._rafPending = false;
+      this.updateUi();
     }
-    /** take = {samples, sr, t0, winEnd} */
-    set(ref, take, offset) {
-      this.ref = ref; this.take = take; this.offset = offset || 0;
-      this.label.textContent = fmtMs(this.offset);
-      this.draw();
+    set(ref, model) {
+      this.ref = ref;
+      if (model !== this.model) { this.sel.clear(); this.hist = []; }
+      this.model = model;
+      if (model) ensureSegs(model);
+      this.updateUi(); this.draw();
     }
-    /** live = {buf, len, sr, t0} или null */
     setLive(live) { this.live = live; this.requestDraw(); }
     requestDraw() { if (this._rafPending) return; this._rafPending = true; requestAnimationFrame(() => { this._rafPending = false; this.draw(); }); }
     setPlaying(p) { this.btnPlay.textContent = p ? '■ Стоп' : '▶ Вместе'; }
-    setOffset(ms, commit) {
-      this.offset = clamp(Math.round(ms), -9000, 9000);
-      this.label.textContent = fmtMs(this.offset);
-      this.draw();
-      if (commit && this.onOffset) this.onOffset(this.offset);
+    get offset() { return this.model ? this.model.params.offset : 0; }
+    setTool(t) { this.tool = t; this.hoverT = null; this.updateUi(); this.draw(); }
+    updateUi() {
+      const m = this.model;
+      this.btnMove.classList.toggle('active', this.tool === 'move');
+      this.btnCut.classList.toggle('active', this.tool === 'cut');
+      this.canvas.classList.toggle('cut', this.tool === 'cut');
+      this.btnDel.disabled = !this.sel.size;
+      this.btnUndo.disabled = !this.hist.length;
+      this.btnReset.disabled = !m || isDefaultModelEdit(m);
+      this.label.textContent = this.sel.size ? this.sel.size + ' выбр.' : fmtMs(this.offset);
     }
+    snapshot() { const m = this.model; return { segs: m.segs.map((s) => ({ ...s })), offset: m.params.offset }; }
+    pushHist() { if (!this.model) return; this.hist.push(this.snapshot()); if (this.hist.length > 60) this.hist.shift(); }
+    commit(kind) { this.updateUi(); this.draw(); if (this.onChange) this.onChange(kind); }
+    undo() {
+      const s = this.hist.pop(); if (!s || !this.model) return;
+      this.model.segs = s.segs; this.model.params.offset = s.offset;
+      const ids = new Set(s.segs.map((x) => x.id)); for (const id of [...this.sel]) if (!ids.has(id)) this.sel.delete(id);
+      this.commit('undo');
+    }
+    nudge(d) {
+      const m = this.model; if (!m) return;
+      this.pushHist();
+      if (this.sel.size) for (const s of m.segs) { if (this.sel.has(s.id)) s.pos += d / 1000; }
+      else m.params.offset = clamp(Math.round(m.params.offset + d), -9000, 9000);
+      this.commit('offset');
+    }
+    setOffset(ms) { if (!this.model) return; this.pushHist(); this.model.params.offset = clamp(Math.round(ms), -9000, 9000); this.commit('offset'); }
     auto() {
-      if (!this.ref || !this.take) return toast('Нет записи для подгонки');
-      const ms = autoAlign(this.ref.samples, this.ref.sr, this.take.samples, this.take.sr, this.take.t0);
-      this.setOffset(ms, true);
+      if (!this.ref || !this.model) return toast('Нет записи для подгонки');
+      this.pushHist();
+      const ms = Math.round(alignOffset(this.model, this.ref));
+      this.model.params.offset = clamp(ms, -9000, 9000);
+      this.commit('auto');
       toast('Автоподгонка: ' + fmtMs(ms));
+    }
+    deleteSel() {
+      const m = this.model;
+      if (!m || !this.sel.size) return toast('Сначала выберите кусок: клик по нему');
+      if (this.sel.size >= m.segs.length) return toast('Нельзя удалить всю запись — оставьте хотя бы один кусок');
+      this.pushHist();
+      m.segs = m.segs.filter((s) => !this.sel.has(s.id));
+      this.sel.clear();
+      this.commit('delete');
+    }
+    resetEdit() {
+      const m = this.model; if (!m) return;
+      this.pushHist();
+      initSegs(m); m.params.offset = 0; this.sel.clear();
+      this.commit('reset');
+    }
+    selectAll() { if (!this.model) return; this.model.segs.forEach((s) => this.sel.add(s.id)); this.updateUi(); this.draw(); }
+    /** Разрезать кусок в точке t (сек таймлайна, с учётом сдвига). */
+    split(t) {
+      const m = this.model; if (!m) return false;
+      const seg = this.segAt(t); if (!seg) return false;
+      const off = m.params.offset / 1000, start = seg.pos + off, sp = m.params.speed || 1;
+      if (t - start < 0.02 || start + segDur(m, seg) - t < 0.02) return false;
+      const k = seg.a + Math.round((t - start) * m.sr * sp);
+      this.pushHist();
+      const right = { id: segSeq++, a: k, b: seg.b, pos: seg.pos + (k - seg.a) / m.sr / sp };
+      seg.b = k;
+      m.segs.splice(m.segs.indexOf(seg) + 1, 0, right);
+      this.commit('cut');
+      return true;
+    }
+    segAt(t) {
+      const m = this.model; if (!m) return null;
+      const off = m.params.offset / 1000;
+      for (let i = m.segs.length - 1; i >= 0; i--) { const s = m.segs[i], a = s.pos + off; if (t >= a && t <= a + segDur(m, s)) return s; }
+      return null;
+    }
+    handleKey(e) {
+      const k = e.key, ctrl = e.ctrlKey || e.metaKey;
+      if ((k === 'Delete' || k === 'Backspace') && this.sel.size) { this.deleteSel(); return true; }
+      if (ctrl && (k === 'z' || k === 'Z' || k === 'я' || k === 'Я')) { this.undo(); return true; }
+      if (ctrl && (k === 'a' || k === 'A' || k === 'ф' || k === 'Ф')) { this.selectAll(); return true; }
+      if (!ctrl && 'sSыЫ'.includes(k)) { this.setTool(this.tool === 'cut' ? 'move' : 'cut'); return true; }
+      if (!ctrl && 'vVмМ'.includes(k)) { this.setTool('move'); return true; }
+      if (k === 'Escape' && (this.sel.size || this.tool !== 'move')) { this.sel.clear(); this.setTool('move'); return true; }
+      return false;
     }
     view() {
       const rd = this.ref ? this.ref.samples.length / this.ref.sr : 0;
       let start = -0.3, end = Math.max(rd, 1) + 0.3;
-      const tk = this.live ? { t0: this.live.t0, dur: this.live.len / this.live.sr, winEnd: this.live.winEnd || 0 } : this.take ? { t0: this.take.t0 + this.offset / 1000, dur: this.take.samples.length / this.take.sr, winEnd: this.take.winEnd } : null;
-      if (tk) {
-        start = Math.min(start, Math.max(-4, tk.t0 - 0.1));
-        end = Math.max(end, (tk.winEnd || 0) + 0.3, Math.min(tk.t0 + tk.dur + 0.1, 14));
+      const ext = (lo, hi, winEnd) => {
+        start = Math.min(start, Math.max(-4, lo - 0.1));
+        end = Math.max(end, (winEnd || 0) + 0.3, Math.min(hi + 0.1, 14));
+      };
+      if (this.live) ext(this.live.t0, this.live.t0 + this.live.len / this.live.sr, this.live.winEnd);
+      else if (this.model && this.model.segs && this.model.segs.length) {
+        const m = this.model, off = m.params.offset / 1000;
+        let lo = Infinity, hi = -Infinity;
+        for (const s of m.segs) { lo = Math.min(lo, s.pos + off); hi = Math.max(hi, s.pos + off + segDur(m, s)); }
+        ext(lo, hi, m.outLen / m.sr);
       }
       return { start, end };
     }
-    bindDrag() {
+    tAt(e, v) { const r = this.canvas.getBoundingClientRect(); return v.start + ((e.clientX - r.left) / r.width) * (v.end - v.start); }
+    bindPointer() {
       let drag = null;
-      this.canvas.addEventListener('pointerdown', (e) => {
-        if (!this.take || this.live) return;
-        const r = this.canvas.getBoundingClientRect(), v = this.view();
-        drag = { x: e.clientX, w: r.width, o: this.offset, v };
-        this.canvas.setPointerCapture(e.pointerId);
-        this.canvas.classList.add('dragging');
+      const c = this.canvas;
+      c.addEventListener('pointerdown', (e) => {
+        try { c.focus({ preventScroll: true }); } catch {}
+        if (this.live || !this.model) return;
+        const v = this.view(), t = this.tAt(e, v);
+        if (this.tool === 'cut') { if (!this.split(t)) toast('Режьте внутри своей дорожки'); return; }
+        const seg = this.segAt(t);
+        if (!seg) {
+          if (!e.shiftKey) this.sel.clear();
+          drag = { kind: 'offset', x: e.clientX, o: this.model.params.offset, v, moved: false };
+        } else {
+          if (e.shiftKey) { if (this.sel.has(seg.id)) this.sel.delete(seg.id); else this.sel.add(seg.id); }
+          else if (!this.sel.has(seg.id)) { this.sel.clear(); this.sel.add(seg.id); }
+          const orig = new Map(this.model.segs.filter((s) => this.sel.has(s.id)).map((s) => [s.id, s.pos]));
+          drag = { kind: 'segs', x: e.clientX, orig, v, moved: false };
+        }
+        c.setPointerCapture(e.pointerId);
+        c.classList.add('dragging');
+        this.updateUi(); this.draw();
       });
-      this.canvas.addEventListener('pointermove', (e) => {
-        if (!drag) return;
-        const secPerPx = (drag.v.end - drag.v.start) / drag.w;
-        let ms = drag.o + (e.clientX - drag.x) * secPerPx * 1000;
-        ms = e.altKey ? ms : Math.round(ms / 5) * 5;
-        this.offset = clamp(Math.round(ms), -9000, 9000);
-        this.label.textContent = fmtMs(this.offset);
+      c.addEventListener('pointermove', (e) => {
+        if (!drag) {
+          if (this.tool === 'cut' && this.model && !this.live) { this.hoverT = this.tAt(e, this.view()); this.requestDraw(); }
+          return;
+        }
+        const r = c.getBoundingClientRect();
+        let dt = ((e.clientX - drag.x) / r.width) * (drag.v.end - drag.v.start);
+        if (!e.altKey) dt = Math.round(dt * 200) / 200; // шаг 5 мс
+        if (!drag.moved && Math.abs(e.clientX - drag.x) < 2) return;
+        if (!drag.moved) { this.pushHist(); drag.moved = true; }
+        if (drag.kind === 'segs') { for (const s of this.model.segs) if (drag.orig.has(s.id)) s.pos = drag.orig.get(s.id) + dt; }
+        else this.model.params.offset = clamp(Math.round(drag.o + dt * 1000), -9000, 9000);
+        this.updateUi();
         this.draw(drag.v);
       });
-      const end = () => { if (!drag) return; drag = null; this.canvas.classList.remove('dragging'); this.draw(); if (this.onOffset) this.onOffset(this.offset); };
-      this.canvas.addEventListener('pointerup', end);
-      this.canvas.addEventListener('pointercancel', end);
+      const end = () => {
+        if (!drag) return;
+        const d = drag; drag = null;
+        c.classList.remove('dragging');
+        if (d.moved) this.commit(d.kind === 'segs' ? 'move' : 'offset');
+        else { this.updateUi(); this.draw(); }
+      };
+      c.addEventListener('pointerup', end);
+      c.addEventListener('pointercancel', end);
+      c.addEventListener('pointerleave', () => { if (this.hoverT != null) { this.hoverT = null; this.requestDraw(); } });
     }
     draw(fixedView) {
       const c = this.canvas, dpr = window.devicePixelRatio || 1;
@@ -718,17 +909,26 @@ registerProcessor('vxp-rec',VxpRec);`;
       const y2 = ruler + 4 + laneH;
       g.fillStyle = 'rgba(255,138,122,.06)'; g.fillRect(0, y2, W, laneH);
       let winEnd = null;
+      const m = this.model;
       if (this.live) {
         wave(y2, this.live.buf, this.live.len, this.live.sr, this.live.t0, '#ff6b6b');
         winEnd = this.live.winEnd;
         const xe = x(this.live.t0 + this.live.len / this.live.sr);
         g.fillStyle = '#ff6b6b'; g.fillRect(Math.round(xe), y2, 2, laneH);
         tag(y2, '● ЗАПИСЬ', '#ff6b6b');
-      } else if (this.take) {
-        const [a0, a1] = wave(y2, this.take.samples, this.take.samples.length, this.take.sr, this.take.t0 + this.offset / 1000, '#ff8a7a');
-        g.strokeStyle = 'rgba(255,138,122,.75)'; g.lineWidth = 1; g.strokeRect(Math.round(a0) + 0.5, y2 + 0.5, Math.max(1, Math.round(a1 - a0)), laneH - 1);
-        winEnd = this.take.winEnd;
-        tag(y2, 'МОЯ ' + (this.offset ? fmtMs(this.offset) : ''), '#ff8a7a');
+      } else if (m && m.segs && m.segs.length) {
+        const off = m.params.offset / 1000, multi = m.segs.length > 1;
+        for (const s of m.segs) {
+          const a = segAudio(m, s), selected = this.sel.has(s.id), p0 = s.pos + off;
+          const xa = x(p0), xb = x(p0 + a.length / m.sr);
+          g.fillStyle = selected ? 'rgba(255,209,201,.16)' : multi ? 'rgba(255,138,122,.07)' : 'rgba(255,138,122,0)';
+          g.fillRect(xa, y2 + 1, xb - xa, laneH - 2);
+          wave(y2, a, a.length, m.sr, p0, selected ? '#ffd1c9' : '#ff8a7a');
+          g.strokeStyle = selected ? '#ffd1c9' : 'rgba(255,138,122,.75)'; g.lineWidth = selected ? 2 : 1;
+          g.strokeRect(Math.round(xa) + 0.5, y2 + 0.5, Math.max(1, Math.round(xb - xa) - 1), laneH - 1);
+        }
+        winEnd = m.outLen / m.sr;
+        tag(y2, 'МОЯ' + (m.segs.length > 1 ? ' · ' + m.segs.length + ' кус.' : '') + (m.params.offset ? ' ' + fmtMs(m.params.offset) : ''), '#ff8a7a');
       } else {
         g.fillStyle = 'rgba(247,247,255,.28)'; g.font = '700 10px Nunito Variable, system-ui, sans-serif'; g.fillText('Нет записи', 8, y2 + laneH / 2 + 3);
         tag(y2, 'МОЯ', '#ff8a7a');
@@ -741,9 +941,17 @@ registerProcessor('vxp-rec',VxpRec);`;
         if (xb < W) g.fillRect(xb, y2, W - xb, laneH);
         g.fillStyle = 'rgba(245,196,81,.8)'; g.fillRect(Math.round(xb), ruler, 1, H - ruler);
       }
+      // линия ножниц
+      if (this.tool === 'cut' && this.hoverT != null && !this.live) {
+        const X = Math.round(x(this.hoverT)) + 0.5;
+        g.strokeStyle = '#f7f7ff'; g.lineWidth = 1; g.setLineDash([3, 3]);
+        g.beginPath(); g.moveTo(X, y2); g.lineTo(X, y2 + laneH); g.stroke(); g.setLineDash([]);
+      }
       if (this.playhead != null) { g.fillStyle = '#f7f7ff'; g.fillRect(Math.round(x(this.playhead)), ruler, 1.5, H - ruler); }
     }
   }
+  const isDefaultModelEdit = (m) => segsPristine(m) && !m.params.offset;
+  VXP.TrackEditor = TrackEditor;
 
   /* ================================================================== */
   /*  Тосты и стили                                                      */
@@ -783,7 +991,12 @@ registerProcessor('vxp-rec',VxpRec);`;
 canvas.vxp-tracks{width:100%;height:104px;display:block;border-radius:6px;background:#04070d;border:1px solid rgba(247,247,255,.08);cursor:grab;touch-action:none}
 canvas.vxp-tracks.dragging{cursor:grabbing}
 canvas.vxp-tracks.big{height:150px}
-.vxp-editbar{justify-content:space-between}
+.vxp-editbar{display:grid;gap:6px}
+.vxp-tools{justify-content:space-between;gap:4px}
+.vxp-btn.active{border-color:#4ee7d2;background:#0f2a2c;color:#4ee7d2}
+canvas.vxp-tracks.cut{cursor:crosshair}
+canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1px}
+.vxp-fxflags{display:flex;flex-wrap:wrap;gap:6px 14px}
 .vxp-offset{min-width:62px;text-align:center;font-size:12px;font-weight:900;color:#ff8a7a;font-variant-numeric:tabular-nums}
 .vxp-slider{display:grid;grid-template-columns:minmax(0,92px) 1fr 52px;gap:8px;align-items:center;font-size:12px;font-weight:800}
 .vxp-slider>span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -849,13 +1062,13 @@ canvas.vxp-tracks.big{height:150px}
   /* ================================================================== */
   const widgets = new Set(); // элементы с ._sync()
   function syncWidgets() { for (const w of widgets) { if (!w.isConnected) { widgets.delete(w); continue; } try { w._sync(); } catch {} } }
-  function slider({ label, min, max, step = 1, get, set, fmt, title, onCommit }) {
+  function slider({ label, min, max, step = 1, get, set, fmt, title, onCommit, def = 0 }) {
     const out = h('output');
     const range = h('input', { type: 'range', min: String(min), max: String(max), step: String(step), title });
     const show = (v) => { out.textContent = fmt(v); };
     range.addEventListener('input', () => { set(+range.value, false); show(+range.value); });
     range.addEventListener('change', () => { set(+range.value, true); onCommit && onCommit(+range.value); });
-    range.addEventListener('dblclick', () => { range.value = '0'; set(0, true); show(0); onCommit && onCommit(0); });
+    range.addEventListener('dblclick', () => { range.value = String(def); set(def, true); show(def); onCommit && onCommit(def); });
     const el = h('label', { class: 'vxp-slider', title }, h('span', null, label), range, out);
     el._sync = () => { const v = get(); if (document.activeElement !== range) range.value = String(v); show(v); };
     el._sync(); widgets.add(el);
@@ -902,17 +1115,20 @@ canvas.vxp-tracks.big{height:150px}
       clearTimeout(timer);
       timer = setTimeout(() => {
         const t = target(); if (!t) return;
-        Object.assign(t.model.params, { pitch: settings.fx.pitch, gain: settings.fx.gain, lowcut: settings.fx.lowcut });
+        for (const k of FX_KEYS) t.model.params[k] = settings.fx[k];
         t.apply();
       }, 60);
     };
     const set = (k) => (v, done) => { settings.fx[k] = v; if (done) { saveSettings(); commit(); } };
-    const lowcut = checkbox({ label: 'Срез низов (убрать гул)', get: () => settings.fx.lowcut, set: (v) => { settings.fx.lowcut = v; saveSettings(); commit(); }, title: 'Фильтр высоких частот 90 Гц' });
+    const flag = (k, label, title) => checkbox({ label, get: () => settings.fx[k], set: (v) => { settings.fx[k] = v; saveSettings(); commit(); }, title });
+    const lowcut = flag('lowcut', 'Срез низов', 'Убирает гул и стук: фильтр высоких частот 90 Гц');
     const reset = h('button', { class: 'vxp-btn small', type: 'button', onclick: () => { settings.fx = { ...DEF_FX }; saveSettings(); syncWidgets(); commit(); } }, 'Сбросить');
     return h('div', { style: 'display:grid;gap:7px' },
       slider({ label: '🔊 Громкость', min: -12, max: 12, get: () => settings.fx.gain, set: set('gain'), fmt: (v) => fmtSigned(v, 'дБ') || '0 дБ', title: 'Громкость моей дорожки (с защитой от перегруза). Двойной клик — сброс' }),
       slider({ label: '🎚 Питч', min: -12, max: 12, step: 1, get: () => settings.fx.pitch, set: set('pitch'), fmt: fmtSemi, title: 'Высота голоса в полутонах, длительность не меняется. Двойной клик — сброс' }),
-      h('div', { class: 'vxp-inline' }, lowcut, reset),
+      slider({ label: '⏩ Скорость', min: 0.5, max: 2, step: 0.05, def: 1, get: () => settings.fx.speed, set: set('speed'), fmt: (v) => '×' + (+v).toFixed(2), title: 'Темп моей дорожки: быстрее — короче, медленнее — длиннее. Высота голоса не меняется. Двойной клик — сброс' }),
+      h('div', { class: 'vxp-fxflags' }, lowcut, flag('underwater', 'Под водой', 'Глухой «подводный» звук с лёгким плаванием'), flag('echo', 'Эхо', 'Небольшое эхо (180 мс)')),
+      h('div', { class: 'vxp-inline', style: 'justify-content:flex-end' }, reset),
       h('div', { class: 'vxp-hint' }, 'Обработка применяется к записи и сохраняется для следующих дублей.'));
   }
   const meters = new Set();
@@ -970,6 +1186,7 @@ canvas.vxp-tracks.big{height:150px}
     let m = takeModels.get(pa);
     if (!m) {
       m = { base: origSamplesOf(pa), sr: pa.sampleRate, t0: 0, outLen: pa.samples.length, params: defaultParams(), ext: false };
+      initSegs(m);
       takeModels.set(pa, m);
     }
     return m;
@@ -978,7 +1195,7 @@ canvas.vxp-tracks.big{height:150px}
     const pa = entry && entry.playerAudio;
     if (!pa) return;
     const m = nativeModel(pa);
-    pa.samples.set(isDefaultParams(m.params) ? origSamplesOf(pa) : renderModel(m));
+    pa.samples.set(isDefaultModel(m) ? origSamplesOf(pa) : renderModel(m));
     const old = entry.playerUrl;
     const url = URL.createObjectURL(encodeWav(pa.samples, pa.sampleRate));
     ownUrls.add(url);
@@ -995,6 +1212,7 @@ canvas.vxp-tracks.big{height:150px}
   /** Подключить расширенную запись (с буфером) к дублю игры. */
   function attachExt(pa, ext, expectSec) {
     const m = nativeModel(pa);
+    if (!segsPristine(m)) return false; // пользователь уже смонтировал дубль — не трогаем
     const big = resample(ext.samples, ext.sr, pa.sampleRate);
     const orig = origSamplesOf(pa);
     if (big.length < orig.length * 0.8) return false;
@@ -1003,7 +1221,7 @@ canvas.vxp-tracks.big{height:150px}
     const k = r2 > 1e-5 ? clamp(r1 / r2, 0.25, 8) : 1;
     if (k !== 1) for (let i = 0; i < big.length; i++) big[i] *= k;
     m.base = big; m.t0 = -L / pa.sampleRate; m.ext = true; m.extTail = (big.length - L - orig.length) / pa.sampleRate;
-    m._ck = null; m._cp = null;
+    initSegs(m);
     return true;
   }
 
@@ -1074,7 +1292,7 @@ canvas.vxp-tracks.big{height:150px}
       try {
         if (attachExt(pa, ext, expect)) {
           const t = currentTake();
-          if (t && t.playerAudio === pa && !isDefaultParams(nativeModel(pa).params)) applyNative(t);
+          if (t && t.playerAudio === pa && !isDefaultModel(nativeModel(pa))) applyNative(t);
           emit('native-ext', pa);
         }
       } catch (e) { console.warn('[Voxalike+] attach', e); }
@@ -1232,7 +1450,7 @@ canvas.vxp-tracks.big{height:150px}
 
   function buildPanel(deck) {
     const editor = new TrackEditor({
-      onOffset: (ms) => { const t = currentTake(); if (t) { nativeModel(t.playerAudio).params.offset = ms; applyNative(t); refreshPanel(true); toast('Сдвиг применён: ' + fmtMs(ms)); } },
+      onChange: () => { const t = currentTake(); if (t && t.playerAudio && panel.editor.model === takeModels.get(t.playerAudio)) applyNative(t); },
       onPlay: () => playNativeTogether(),
     });
     panel.editor = editor;
@@ -1275,9 +1493,9 @@ canvas.vxp-tracks.big{height:150px}
         const isNew = pa && pa !== panel.takeRef && !takeModels.has(pa);
         panel.refRef = refObj; panel.takeRef = pa;
         if (player.playing) player.stop();
-        if (isNew) { const m = nativeModel(pa); if (!isDefaultParams(m.params)) applyNative(t); }
+        if (isNew) { const m = nativeModel(pa); if (!isDefaultModel(m)) applyNative(t); }
         const m = pa ? nativeModel(pa) : null;
-        panel.editor.set(refObj ? { samples: refObj.samples, sr: refObj.sampleRate } : null, m ? modelView(m) : null, m ? m.params.offset : 0);
+        panel.editor.set(refObj ? { samples: refObj.samples, sr: refObj.sampleRate } : null, m);
       }
     }
     // строка о буфере
@@ -1374,7 +1592,7 @@ canvas.vxp-tracks.big{height:150px}
       this.videoBox = h('div', { class: 'vxp-video' }, this.video, this.cue);
       this.subSpeaker = h('span'); this.subText = h('p');
       this.editor = new TrackEditor({
-        onOffset: (ms) => { if (this.model) { this.model.params.offset = ms; this.dirty = true; } },
+        onChange: () => { if (this.model) this.dirty = true; },
         onPlay: () => this.playMine(true),
       });
       this.editor.canvas.classList.add('big');
@@ -1419,13 +1637,16 @@ canvas.vxp-tracks.big{height:150px}
     }
     onKey(e) {
       if (isTyping(e.target) || this.counting) return;
-      const k = e.key;
-      if (k === 'Escape') { e.preventDefault(); this.close(); }
+      const k = e.key, ctrl = e.ctrlKey || e.metaKey, ed = this.editor;
+      if (k === 'Escape' && (ed.sel.size || ed.tool !== 'move')) { ed.handleKey(e); e.preventDefault(); }
+      else if (k === 'Escape') { e.preventDefault(); this.close(); }
+      else if (ctrl) { if (ed.handleKey(e)) e.preventDefault(); else return; }
       else if ('rRкК'.includes(k)) { e.preventDefault(); this.toggleRec(); }
       else if (k === ' ') { e.preventDefault(); this.playMine(false); }
       else if (k === 'Enter') { e.preventDefault(); this.save(true); }
-      else if (k === '[' || k === 'х') { e.preventDefault(); this.editor.setOffset(this.editor.offset - (e.shiftKey ? 50 : 10), true); }
-      else if (k === ']' || k === 'ъ') { e.preventDefault(); this.editor.setOffset(this.editor.offset + (e.shiftKey ? 50 : 10), true); }
+      else if (k === '[' || k === 'х') { e.preventDefault(); this.editor.nudge(e.shiftKey ? -50 : -10); }
+      else if (k === ']' || k === 'ъ') { e.preventDefault(); this.editor.nudge(e.shiftKey ? 50 : 10); }
+      else if (this.editor.handleKey(e)) { e.preventDefault(); }
       else if ('aAфФ'.includes(k)) { e.preventDefault(); this.editor.auto(); }
       else return;
       e.stopPropagation();
@@ -1441,7 +1662,7 @@ canvas.vxp-tracks.big{height:150px}
       const done = mine.filter((a) => ['sent', 'ready'].includes(lineStatus(g, a))).length;
       this.kicker.textContent = 'Запись заранее · готово ' + done + '/' + mine.length;
     }
-    refreshEditor() { this.editor.set(this.ref, this.model ? modelView(this.model) : null, this.model ? this.model.params.offset : 0); this.updateButtons(); }
+    refreshEditor() { this.editor.set(this.ref, this.model); this.updateButtons(); }
     async select(index) {
       const g = room.state && room.state.game; if (!g || index == null) return;
       if (this.dirty && this.model) this.save(false);
@@ -1584,8 +1805,9 @@ canvas.vxp-tracks.big{height:150px}
         this.model = {
           base: normalizeTake(res.samples), sr: res.sr, t0: res.startCtx - rec.videoCtx,
           outLen: Math.round((this.clipDur() + 0.4) * res.sr),
-          params: { offset: 0, pitch: fx.pitch, gain: fx.gain, lowcut: fx.lowcut },
+          params: defaultParams(),
         };
+        initSegs(this.model);
         this.dirty = true;
         this.refreshEditor();
         try { this.video.currentTime = this.clip.videoStartSeconds; } catch {}
@@ -1621,8 +1843,8 @@ canvas.vxp-tracks.big{height:150px}
     if (!settings.hotkeys || studio || isTyping(e.target) || e.ctrlKey || e.metaKey) return;
     if (!panel.root || !panel.root.isConnected) return;
     const ed = panel.editor;
-    if (e.key === '[' || e.key === 'х') { ed.setOffset(ed.offset - (e.shiftKey ? 50 : 10), true); e.preventDefault(); }
-    else if (e.key === ']' || e.key === 'ъ') { ed.setOffset(ed.offset + (e.shiftKey ? 50 : 10), true); e.preventDefault(); }
+    if (e.key === '[' || e.key === 'х') { ed.nudge(e.shiftKey ? -50 : -10); e.preventDefault(); }
+    else if (e.key === ']' || e.key === 'ъ') { ed.nudge(e.shiftKey ? 50 : 10); e.preventDefault(); }
   }, true);
 
   console.info('%cVoxalike+ ' + VERSION + ' загружен', 'color:#4ee7d2;font-weight:bold');
