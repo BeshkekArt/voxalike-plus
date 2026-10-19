@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 🎮 Ошибка в самой игре Voxalike
+    url: https://voxalike.com/
+    about: Если проблема есть и без мода — сообщите разработчикам игры. Этот проект к ним не относится.
+  - name: ❤️ Поддержать проект
+    url: https://boosty.to/el_beshuele/donate
+    about: Если мод вам пригодился — можно поддержать автора на Boosty (добровольно).

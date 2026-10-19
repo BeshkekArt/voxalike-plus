@@ -1,0 +1,41 @@
+name: 💡 Предложение функции
+description: Предложите новую функцию или улучшение мода
+title: "[Идея] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Спасибо за идею! Опишите её как можно понятнее. Если функция окажется полезной и логичной — мы её добавим.
+        Сначала проверьте, нет ли похожего [открытого тикета](https://github.com/BeshkekArt/voxalike-plus/issues) — тогда просто поставьте ему 👍.
+  - type: textarea
+    id: what
+    attributes:
+      label: Что вы хотите?
+      description: Опишите функцию или изменение.
+      placeholder: "Например: кнопка, чтобы перезаписать только конец реплики…"
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Зачем это нужно?
+      description: Какую проблему это решает? В какой момент игры мешает сейчас?
+    validations:
+      required: true
+  - type: textarea
+    id: how
+    attributes:
+      label: Как это могло бы выглядеть?
+      description: Необязательно. Можно приложить скриншот или набросок.
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Где это нужно?
+      multiple: true
+      options:
+        - Одиночная игра
+        - Сетевая игра — «Совместно»
+        - Сетевая игра — PVP
+        - Студия «Записать все заранее»
+        - Везде / не важно

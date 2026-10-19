@@ -1,0 +1,63 @@
+name: 🐞 Сообщить об ошибке
+description: Что-то работает не так, как должно
+title: "[Ошибка] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Опишите ошибку так, чтобы её можно было повторить. Если проблема есть и **без мода** — это ошибка самой игры Voxalike, сообщите её разработчикам.
+  - type: textarea
+    id: what
+    attributes:
+      label: Что случилось?
+      description: Что вы делали, что ожидали и что получили.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Как повторить
+      placeholder: |
+        1. Открыть одиночную игру
+        2. Нажать «Записать»
+        3. …
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Версия мода
+      description: Видна во всплывающем окне расширения или в консоли браузера («Voxalike+ X.Y.Z загружен»).
+      placeholder: "1.1.1"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Как установлен мод
+      options:
+        - Расширение Chrome / Edge / Яндекс / Opera
+        - Firefox (.xpi)
+        - Юзерскрипт (Tampermonkey / Violentmonkey)
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Браузер и его версия
+      placeholder: "Chrome 141, Windows 11"
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Режим игры
+      options:
+        - Одиночная игра
+        - Сетевая — «Совместно»
+        - Сетевая — PVP
+        - Студия «Записать все заранее»
+  - type: textarea
+    id: logs
+    attributes:
+      label: Скриншоты и консоль
+      description: F12 → Console — строки с «Voxalike+» или ошибки красным. Скриншот тоже очень помогает.
