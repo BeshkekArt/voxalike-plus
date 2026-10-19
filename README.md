@@ -8,6 +8,8 @@
 [📦 Скачать последнюю версию](https://github.com/BeshkekArt/voxalike-plus/releases/latest) · [💡 Предложить идею](https://github.com/BeshkekArt/voxalike-plus/issues/new/choose) · [❤️ Поддержать на Boosty](https://boosty.to/el_beshuele/donate)
 
 ---
+<img width="1033" height="837" alt="image" src="https://github.com/user-attachments/assets/d086d8ac-3021-4300-96bd-ae265f6936a5" />
+---
 
 ## Возможности
 
