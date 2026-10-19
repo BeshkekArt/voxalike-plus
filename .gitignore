@@ -1,0 +1,8 @@
+dist/
+build/
+node_modules/
+package.json
+package-lock.json
+extension/vxp-main.js
+extension/README.md
+.DS_Store
