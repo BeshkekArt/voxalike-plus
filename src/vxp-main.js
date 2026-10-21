@@ -18,7 +18,7 @@
 (() => {
   'use strict';
   if (window.__VXP__) return;
-  const VERSION = '1.2.0';
+  const VERSION = '1.3.0';
   const VXP = (window.__VXP__ = { version: VERSION });
   const IS_FF = /firefox/i.test(navigator.userAgent);
 
@@ -46,7 +46,7 @@
     }
     return e;
   }
-  const fmtMs = (ms) => { const r = Math.round(ms); return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r) + ' мс'; };
+  const fmtMs = (ms) => { const r = Math.round(ms); return (r > 0 ? '+' : r < 0 ? '−' : '±') + Math.abs(r) + ' ' + tr('мс', 'ms'); };
   const fmtSigned = (v, unit) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v) + ' ' + unit;
   const isTyping = (t) =>
     t && (t.isContentEditable || /^(textarea|select)$/i.test(t.tagName) ||
@@ -65,10 +65,17 @@
       autoSubmit: true, notifyTurn: true, hotkeys: true,
       fx: { ...DEF_FX },
       collapsed: {},
+      lang: 'auto', // auto | ru | en
     },
     (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch { return {}; } })()
   );
   settings.fx = Object.assign({ ...DEF_FX }, settings.fx || {});
+  if (settings.collapsed.app === undefined) settings.collapsed.app = true;
+  /** Язык интерфейса: 'auto' — по языку браузера (ru/uk/be/kk → русский, иначе English). */
+  const curLang = () => (settings.lang === 'ru' || settings.lang === 'en' ? settings.lang
+    : /^(ru|uk|be|kk)\b/i.test(navigator.language || '') ? 'ru' : 'en');
+  /** tr(русский, english) — строка на текущем языке. */
+  const tr = (ru, en) => (curLang() === 'en' ? en : ru);
   const saveSettings = () => { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch {} };
   VXP.settings = settings;
 
@@ -680,22 +687,22 @@ registerProcessor('vxp-rec',VxpRec);`;
       this.ref = null; this.model = null; this.live = null; this.playhead = null;
       this.sel = new Set(); this.tool = 'move'; this.hist = []; this.hoverT = null;
       this.onChange = onChange; this.onPlay = onPlay;
-      this.canvas = h('canvas', { class: 'vxp-tracks', tabindex: '0', title: 'Клик — выбрать кусок, тянуть — двигать. Ножницы — разрезать. Delete — удалить, Ctrl+Z — отменить' });
+      this.canvas = h('canvas', { class: 'vxp-tracks', tabindex: '0', title: tr('Клик — выбрать кусок, тянуть — двигать. Ножницы — разрезать. Delete — удалить, Ctrl+Z — отменить', 'Click — select a piece, drag — move. Scissors — cut. Delete — remove, Ctrl+Z — undo') });
       this.label = h('span', { class: 'vxp-offset' }, fmtMs(0));
       const B = (txt, title, fn, cls = 'icon') => h('button', { class: 'vxp-btn ' + cls, type: 'button', title, onclick: fn }, txt);
-      this.btnMove = B('↔', 'Выбор и перемещение кусков (V). Shift+клик — выбрать несколько', () => this.setTool('move'));
-      this.btnCut = B('✂', 'Ножницы: клик по своей дорожке — разрезать (S)', () => this.setTool('cut'));
-      this.btnDel = B('🗑', 'Удалить выбранные куски (Delete)', () => this.deleteSel());
-      this.btnUndo = B('↶', 'Отменить (Ctrl+Z)', () => this.undo());
-      this.btnReset = B('⟲', 'Сбросить монтаж и сдвиг', () => this.resetEdit());
-      this.btnPlay = B('▶ Вместе', 'Оригинал + моя запись вместе', () => this.onPlay && this.onPlay(), '');
+      this.btnMove = B('↔', tr('Выбор и перемещение кусков (V). Shift+клик — выбрать несколько', 'Select and move pieces (V). Shift+click — select several'), () => this.setTool('move'));
+      this.btnCut = B('✂', tr('Ножницы: клик по своей дорожке — разрезать (S)', 'Scissors: click your track to cut (S)'), () => this.setTool('cut'));
+      this.btnDel = B('🗑', tr('Удалить выбранные куски (Delete)', 'Delete selected pieces (Delete)'), () => this.deleteSel());
+      this.btnUndo = B('↶', tr('Отменить (Ctrl+Z)', 'Undo (Ctrl+Z)'), () => this.undo());
+      this.btnReset = B('⟲', tr('Сбросить монтаж и сдвиг', 'Reset edits and shift'), () => this.resetEdit());
+      this.btnPlay = B(tr('▶ Вместе', '▶ Together'), tr('Оригинал + моя запись вместе', 'Original + my take together'), () => this.onPlay && this.onPlay(), '');
       this.toolbar = h('div', { class: 'vxp-editbar' },
         h('div', { class: 'vxp-row vxp-tools' }, this.btnMove, this.btnCut, this.btnDel, this.btnUndo, this.btnReset),
         h('div', { class: 'vxp-row vxp-tools' },
-          B('◀', 'Сдвинуть влево (−10 мс, Shift −50). Если выбраны куски — только их', (e) => this.nudge(e.shiftKey ? -50 : -10)),
+          B('◀', tr('Сдвинуть влево (−10 мс, Shift −50). Если выбраны куски — только их', 'Shift left (−10 ms, Shift −50). With pieces selected — only them'), (e) => this.nudge(e.shiftKey ? -50 : -10)),
           this.label,
-          B('▶', 'Сдвинуть вправо (+10 мс, Shift +50). Если выбраны куски — только их', (e) => this.nudge(e.shiftKey ? 50 : 10)),
-          B('Авто', 'Автоподгонка к оригиналу', () => this.auto(), ''),
+          B('▶', tr('Сдвинуть вправо (+10 мс, Shift +50). Если выбраны куски — только их', 'Shift right (+10 ms, Shift +50). With pieces selected — only them'), (e) => this.nudge(e.shiftKey ? 50 : 10)),
+          B(tr('Авто', 'Auto'), tr('Автоподгонка к оригиналу', 'Auto-align to the original'), () => this.auto(), ''),
           this.btnPlay));
       this.root = h('div', { class: 'vxp-editor' }, this.canvas, this.toolbar);
       this.bindPointer();
@@ -713,7 +720,7 @@ registerProcessor('vxp-rec',VxpRec);`;
     }
     setLive(live) { this.live = live; this.requestDraw(); }
     requestDraw() { if (this._rafPending) return; this._rafPending = true; requestAnimationFrame(() => { this._rafPending = false; this.draw(); }); }
-    setPlaying(p) { this.btnPlay.textContent = p ? '■ Стоп' : '▶ Вместе'; }
+    setPlaying(p) { this.btnPlay.textContent = p ? tr('■ Стоп', '■ Stop') : tr('▶ Вместе', '▶ Together'); }
     get offset() { return this.model ? this.model.params.offset : 0; }
     setTool(t) { this.tool = t; this.hoverT = null; this.updateUi(); this.draw(); }
     updateUi() {
@@ -724,7 +731,7 @@ registerProcessor('vxp-rec',VxpRec);`;
       this.btnDel.disabled = !this.sel.size;
       this.btnUndo.disabled = !this.hist.length;
       this.btnReset.disabled = !m || isDefaultModelEdit(m);
-      this.label.textContent = this.sel.size ? this.sel.size + ' выбр.' : fmtMs(this.offset);
+      this.label.textContent = this.sel.size ? this.sel.size + ' ' + tr('выбр.', 'sel.') : fmtMs(this.offset);
     }
     snapshot() { const m = this.model; return { segs: m.segs.map((s) => ({ ...s })), offset: m.params.offset }; }
     pushHist() { if (!this.model) return; this.hist.push(this.snapshot()); if (this.hist.length > 60) this.hist.shift(); }
@@ -744,17 +751,17 @@ registerProcessor('vxp-rec',VxpRec);`;
     }
     setOffset(ms) { if (!this.model) return; this.pushHist(); this.model.params.offset = clamp(Math.round(ms), -9000, 9000); this.commit('offset'); }
     auto() {
-      if (!this.ref || !this.model) return toast('Нет записи для подгонки');
+      if (!this.ref || !this.model) return toast(tr('Нет записи для подгонки', 'No recording to align'));
       this.pushHist();
       const ms = Math.round(alignOffset(this.model, this.ref));
       this.model.params.offset = clamp(ms, -9000, 9000);
       this.commit('auto');
-      toast('Автоподгонка: ' + fmtMs(ms));
+      toast(tr('Автоподгонка: ', 'Auto-align: ') + fmtMs(ms));
     }
     deleteSel() {
       const m = this.model;
-      if (!m || !this.sel.size) return toast('Сначала выберите кусок: клик по нему');
-      if (this.sel.size >= m.segs.length) return toast('Нельзя удалить всю запись — оставьте хотя бы один кусок');
+      if (!m || !this.sel.size) return toast(tr('Сначала выберите кусок: клик по нему', 'Select a piece first: click it'));
+      if (this.sel.size >= m.segs.length) return toast(tr('Нельзя удалить всю запись — оставьте хотя бы один кусок', 'You can\'t delete the whole take — keep at least one piece'));
       this.pushHist();
       m.segs = m.segs.filter((s) => !this.sel.has(s.id));
       this.sel.clear();
@@ -821,7 +828,7 @@ registerProcessor('vxp-rec',VxpRec);`;
         try { c.focus({ preventScroll: true }); } catch {}
         if (this.live || !this.model) return;
         const v = this.view(), t = this.tAt(e, v);
-        if (this.tool === 'cut') { if (!this.split(t)) toast('Режьте внутри своей дорожки'); return; }
+        if (this.tool === 'cut') { if (!this.split(t)) toast(tr('Режьте внутри своей дорожки', 'Cut inside your own track')); return; }
         const seg = this.segAt(t);
         if (!seg) {
           if (!e.shiftKey) this.sel.clear();
@@ -877,7 +884,7 @@ registerProcessor('vxp-rec',VxpRec);`;
       for (let t = Math.ceil(v.start / step) * step; t <= v.end; t += step) {
         const X = Math.round(x(t)) + 0.5;
         g.fillStyle = 'rgba(247,247,255,.35)'; g.fillRect(X, ruler - 4, 1, 4);
-        if (Math.abs(t - Math.round(t)) < 1e-6) g.fillText(Math.round(t) + 'с', X + 2, 9);
+        if (Math.abs(t - Math.round(t)) < 1e-6) g.fillText(Math.round(t) + tr('с', 's'), X + 2, 9);
       }
       g.fillStyle = 'rgba(78,231,210,.4)'; g.fillRect(Math.round(x(0)), ruler, 1, H - ruler);
       const wave = (y0, s, len, sr, offSec, color) => {
@@ -903,8 +910,8 @@ registerProcessor('vxp-rec',VxpRec);`;
       const y1 = ruler + 2;
       g.fillStyle = 'rgba(78,231,210,.05)'; g.fillRect(0, y1, W, laneH);
       if (this.ref) wave(y1, this.ref.samples, this.ref.samples.length, this.ref.sr, 0, '#4ee7d2');
-      else { g.fillStyle = 'rgba(247,247,255,.28)'; g.font = '700 10px Nunito Variable, system-ui, sans-serif'; g.fillText('Нет оригинала', 8, y1 + laneH / 2 + 3); }
-      tag(y1, 'ОРИГИНАЛ', '#4ee7d2');
+      else { g.fillStyle = 'rgba(247,247,255,.28)'; g.font = '700 10px Nunito Variable, system-ui, sans-serif'; g.fillText(tr('Нет оригинала', 'No original'), 8, y1 + laneH / 2 + 3); }
+      tag(y1, tr('ОРИГИНАЛ', 'ORIGINAL'), '#4ee7d2');
       // дорожка 2 — моя
       const y2 = ruler + 4 + laneH;
       g.fillStyle = 'rgba(255,138,122,.06)'; g.fillRect(0, y2, W, laneH);
@@ -915,7 +922,7 @@ registerProcessor('vxp-rec',VxpRec);`;
         winEnd = this.live.winEnd;
         const xe = x(this.live.t0 + this.live.len / this.live.sr);
         g.fillStyle = '#ff6b6b'; g.fillRect(Math.round(xe), y2, 2, laneH);
-        tag(y2, '● ЗАПИСЬ', '#ff6b6b');
+        tag(y2, tr('● ЗАПИСЬ', '● REC'), '#ff6b6b');
       } else if (m && m.segs && m.segs.length) {
         const off = m.params.offset / 1000, multi = m.segs.length > 1;
         for (const s of m.segs) {
@@ -928,10 +935,10 @@ registerProcessor('vxp-rec',VxpRec);`;
           g.strokeRect(Math.round(xa) + 0.5, y2 + 0.5, Math.max(1, Math.round(xb - xa) - 1), laneH - 1);
         }
         winEnd = m.outLen / m.sr;
-        tag(y2, 'МОЯ' + (m.segs.length > 1 ? ' · ' + m.segs.length + ' кус.' : '') + (m.params.offset ? ' ' + fmtMs(m.params.offset) : ''), '#ff8a7a');
+        tag(y2, tr('МОЯ', 'MINE') + (m.segs.length > 1 ? ' · ' + m.segs.length + ' ' + tr('кус.', 'pcs') : '') + (m.params.offset ? ' ' + fmtMs(m.params.offset) : ''), '#ff8a7a');
       } else {
-        g.fillStyle = 'rgba(247,247,255,.28)'; g.font = '700 10px Nunito Variable, system-ui, sans-serif'; g.fillText('Нет записи', 8, y2 + laneH / 2 + 3);
-        tag(y2, 'МОЯ', '#ff8a7a');
+        g.fillStyle = 'rgba(247,247,255,.28)'; g.font = '700 10px Nunito Variable, system-ui, sans-serif'; g.fillText(tr('Нет записи', 'No recording'), 8, y2 + laneH / 2 + 3);
+        tag(y2, tr('МОЯ', 'MINE'), '#ff8a7a');
       }
       // окно, которое уходит в игру
       if (winEnd) {
@@ -1091,23 +1098,23 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     return el;
   }
   function micControls() {
-    const meter = h('div', { class: 'vxp-meter idle', title: 'Уровень микрофона (виден во время записи)' }, h('i'));
+    const meter = h('div', { class: 'vxp-meter idle', title: tr('Уровень микрофона (виден во время записи)', 'Mic level (shown while recording)') }, h('i'));
     meters.add(meter);
     return h('div', { style: 'display:grid;gap:7px' },
-      slider({ label: '🎙 Микрофон', min: -12, max: 12, get: () => settings.gainDb, set: (v) => { settings.gainDb = v; applyGainAll(); saveSettings(); }, fmt: (v) => fmtSigned(v, 'дБ') || '0 дБ', title: 'Усиление микрофона — действует сразу, даже во время записи. Двойной клик — сброс' }),
+      slider({ label: tr('🎙 Микрофон', '🎙 Microphone'), min: -12, max: 12, get: () => settings.gainDb, set: (v) => { settings.gainDb = v; applyGainAll(); saveSettings(); }, fmt: (v) => fmtSigned(v, tr('дБ', 'dB')) || tr('0 дБ', '0 dB'), title: tr('Усиление микрофона — действует сразу, даже во время записи. Двойной клик — сброс', 'Mic gain — applies instantly, even while recording. Double-click — reset') }),
       meter,
-      checkbox({ label: 'Слушать себя при записи', get: () => settings.monitorSelf, set: (v) => { settings.monitorSelf = v; saveSettings(); updateMonitorAll(); }, title: 'Свой голос в наушниках во время записи' }),
-      checkbox({ label: 'Чистый микрофон (без провалов)', get: () => settings.rawMic, set: (v) => { settings.rawMic = v; saveSettings(); applyRawMic(); }, title: 'Отключает эхо- и шумоподавление браузера, из-за которых голос проваливается. С включённым оригиналом при записи нужны наушники' }),
+      checkbox({ label: tr('Слушать себя при записи', 'Hear myself while recording'), get: () => settings.monitorSelf, set: (v) => { settings.monitorSelf = v; saveSettings(); updateMonitorAll(); }, title: tr('Свой голос в наушниках во время записи', 'Your own voice in headphones while recording') }),
+      checkbox({ label: tr('Чистый микрофон (без провалов)', 'Clean mic (no dropouts)'), get: () => settings.rawMic, set: (v) => { settings.rawMic = v; saveSettings(); applyRawMic(); }, title: tr('Отключает эхо- и шумоподавление браузера, из-за которых голос проваливается. С включённым оригиналом при записи нужны наушники', 'Turns off the browser\'s echo cancellation and noise suppression, which make the voice drop out. Use headphones when listening to the original while recording') }),
     );
   }
   function timingControls() {
     return h('div', { style: 'display:grid;gap:6px' },
-      selectRow({ label: 'Отсчёт перед записью', options: [[0, 'нет'], [3, '3 с'], [5, '5 с']], get: () => settings.countdown, set: (v) => { settings.countdown = v; }, title: 'Обратный отсчёт 3-2-1 после нажатия «Записать»' }),
-      selectRow({ label: 'Буфер после реплики', options: [[0, 'нет'], [3, '3 с'], [5, '5 с'], [8, '8 с']], get: () => settings.tailSec, set: (v) => { settings.tailSec = v; }, title: 'Запись продолжается после конца реплики — опоздавшую фразу можно перетащить влево' }),
-      checkbox({ label: 'Звук отсчёта', get: () => settings.countBeep, set: (v) => { settings.countBeep = v; saveSettings(); } }),
+      selectRow({ label: tr('Отсчёт перед записью', 'Countdown before recording'), options: [[0, tr('нет', 'none')], [3, tr('3 с', '3 s')], [5, tr('5 с', '5 s')]], get: () => settings.countdown, set: (v) => { settings.countdown = v; }, title: tr('Обратный отсчёт 3-2-1 после нажатия «Записать»', '3-2-1 countdown after you press Record') }),
+      selectRow({ label: tr('Буфер после реплики', 'Buffer after the line'), options: [[0, tr('нет', 'none')], [3, tr('3 с', '3 s')], [5, tr('5 с', '5 s')], [8, tr('8 с', '8 s')]], get: () => settings.tailSec, set: (v) => { settings.tailSec = v; }, title: tr('Запись продолжается после конца реплики — опоздавшую фразу можно перетащить влево', 'Recording continues after the line ends — drag a late phrase to the left') }),
+      checkbox({ label: tr('Звук отсчёта', 'Countdown beeps'), get: () => settings.countBeep, set: (v) => { settings.countBeep = v; saveSettings(); } }),
     );
   }
-  const fmtSemi = (v) => (v ? fmtSigned(v, 'пт') : '0');
+  const fmtSemi = (v) => (v ? fmtSigned(v, tr('пт', 'st')) : '0');
   /** Обработка: target() → {model, apply()} | null */
   function fxControls(target) {
     let timer = 0;
@@ -1121,15 +1128,15 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     };
     const set = (k) => (v, done) => { settings.fx[k] = v; if (done) { saveSettings(); commit(); } };
     const flag = (k, label, title) => checkbox({ label, get: () => settings.fx[k], set: (v) => { settings.fx[k] = v; saveSettings(); commit(); }, title });
-    const lowcut = flag('lowcut', 'Срез низов', 'Убирает гул и стук: фильтр высоких частот 90 Гц');
-    const reset = h('button', { class: 'vxp-btn small', type: 'button', onclick: () => { settings.fx = { ...DEF_FX }; saveSettings(); syncWidgets(); commit(); } }, 'Сбросить');
+    const lowcut = flag('lowcut', tr('Срез низов', 'Low cut'), tr('Убирает гул и стук: фильтр высоких частот 90 Гц', 'Removes rumble and thumps: 90 Hz high-pass filter'));
+    const reset = h('button', { class: 'vxp-btn small', type: 'button', onclick: () => { settings.fx = { ...DEF_FX }; saveSettings(); syncWidgets(); commit(); } }, tr('Сбросить', 'Reset'));
     return h('div', { style: 'display:grid;gap:7px' },
-      slider({ label: '🔊 Громкость', min: -12, max: 12, get: () => settings.fx.gain, set: set('gain'), fmt: (v) => fmtSigned(v, 'дБ') || '0 дБ', title: 'Громкость моей дорожки (с защитой от перегруза). Двойной клик — сброс' }),
-      slider({ label: '🎚 Питч', min: -12, max: 12, step: 1, get: () => settings.fx.pitch, set: set('pitch'), fmt: fmtSemi, title: 'Высота голоса в полутонах, длительность не меняется. Двойной клик — сброс' }),
-      slider({ label: '⏩ Скорость', min: 0.5, max: 2, step: 0.05, def: 1, get: () => settings.fx.speed, set: set('speed'), fmt: (v) => '×' + (+v).toFixed(2), title: 'Темп моей дорожки: быстрее — короче, медленнее — длиннее. Высота голоса не меняется. Двойной клик — сброс' }),
-      h('div', { class: 'vxp-fxflags' }, lowcut, flag('underwater', 'Под водой', 'Глухой «подводный» звук с лёгким плаванием'), flag('echo', 'Эхо', 'Небольшое эхо (180 мс)')),
+      slider({ label: tr('🔊 Громкость', '🔊 Volume'), min: -12, max: 12, get: () => settings.fx.gain, set: set('gain'), fmt: (v) => fmtSigned(v, tr('дБ', 'dB')) || tr('0 дБ', '0 dB'), title: tr('Громкость моей дорожки (с защитой от перегруза). Двойной клик — сброс', 'Volume of my track (overload-protected). Double-click — reset') }),
+      slider({ label: tr('🎚 Питч', '🎚 Pitch'), min: -12, max: 12, step: 1, get: () => settings.fx.pitch, set: set('pitch'), fmt: fmtSemi, title: tr('Высота голоса в полутонах, длительность не меняется. Двойной клик — сброс', 'Voice pitch in semitones, duration unchanged. Double-click — reset') }),
+      slider({ label: tr('⏩ Скорость', '⏩ Speed'), min: 0.5, max: 2, step: 0.05, def: 1, get: () => settings.fx.speed, set: set('speed'), fmt: (v) => '×' + (+v).toFixed(2), title: tr('Темп моей дорожки: быстрее — короче, медленнее — длиннее. Высота голоса не меняется. Двойной клик — сброс', 'Tempo of my track: faster — shorter, slower — longer. Pitch unchanged. Double-click — reset') }),
+      h('div', { class: 'vxp-fxflags' }, lowcut, flag('underwater', tr('Под водой', 'Underwater'), tr('Глухой «подводный» звук с лёгким плаванием', 'Muffled “underwater” sound with a slight wobble')), flag('echo', tr('Эхо', 'Echo'), tr('Небольшое эхо (180 мс)', 'A small echo (180 ms)'))),
       h('div', { class: 'vxp-inline', style: 'justify-content:flex-end' }, reset),
-      h('div', { class: 'vxp-hint' }, 'Обработка применяется к записи и сохраняется для следующих дублей.'));
+      h('div', { class: 'vxp-hint' }, tr('Обработка применяется к записи и сохраняется для следующих дублей.', 'Processing is applied to the take and kept for the next takes.')));
   }
   const meters = new Set();
   function tickMeters() {
@@ -1148,7 +1155,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
   function countdown(secs, { rectEl, host } = {}) {
     return new Promise((resolve) => {
       if (!secs) return resolve(true);
-      const num = h('b'), el = h('div', { class: 'vxp-count' + (host ? ' in' : ''), title: 'Клик или Esc — отмена' }, num, h('small', null, 'Приготовьтесь · Esc — отмена'));
+      const num = h('b'), el = h('div', { class: 'vxp-count' + (host ? ' in' : ''), title: tr('Клик или Esc — отмена', 'Click or Esc — cancel') }, num, h('small', null, tr('Приготовьтесь · Esc — отмена', 'Get ready · Esc — cancel')));
       if (host) host.append(el);
       else {
         const r = (rectEl && rectEl.getBoundingClientRect()) || { left: innerWidth / 2 - 150, top: innerHeight / 2 - 100, width: 300, height: 200 };
@@ -1344,7 +1351,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     if (g.currentAssignmentIndex === a.index) return 'now';
     return 'todo';
   }
-  const STATUS_TEXT = { sent: 'Отправлено', ready: 'В очереди', now: 'Сейчас', todo: 'Не записано', sending: 'Отправка…' };
+  const statusText = (st) => ({ sent: tr('Отправлено', 'Sent'), ready: tr('В очереди', 'Queued'), now: tr('Сейчас', 'Now'), todo: tr('Не записано', 'Not recorded'), sending: tr('Отправка…', 'Sending…') })[st];
 
   let submitBusy = false;
   async function trySubmit() {
@@ -1370,10 +1377,10 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       const res = await window.fetch('/api/rooms/audio', { method: 'POST', headers: { 'x-voxalike-request-id': crypto.randomUUID() }, body: fd });
       if (!res.ok) { let msg = res.statusText; try { msg = (await res.json()).error || msg; } catch {} throw new Error(msg); }
       q.status = 'sent';
-      toast('✓ Реплика #' + (i + 1) + ' отправлена автоматически');
+      toast(tr('✓ Реплика #' + (i + 1) + ' отправлена автоматически', '✓ Line #' + (i + 1) + ' sent automatically'));
     } catch (e) {
       q.status = 'ready'; q.error = e.message;
-      toast('Не удалось отправить #' + (i + 1) + ': ' + e.message, 'err');
+      toast(tr('Не удалось отправить #', 'Failed to send #') + (i + 1) + ': ' + e.message, 'err');
       await sleep(2500);
     } finally { submitBusy = false; emit('queue'); setTimeout(trySubmit, 300); }
   }
@@ -1410,7 +1417,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       beep(880, 0.35, 0.15);
       origTitle = origTitle || document.title;
       let on = false; clearInterval(titleTimer);
-      titleTimer = setInterval(() => { document.title = (on = !on) ? '🎙 Ваш ход!' : origTitle; }, 900);
+      titleTimer = setInterval(() => { document.title = (on = !on) ? tr('🎙 Ваш ход!', '🎙 Your turn!') : origTitle; }, 900);
     }
   }
   document.addEventListener('visibilitychange', () => {
@@ -1420,6 +1427,23 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
   /* ================================================================== */
   /*  Панель на сцене озвучки                                            */
   /* ================================================================== */
+  /** Выбор языка интерфейса (Авто / Русский / English). */
+  function langControl() {
+    const sel = h('select', { class: 'vxp-select', title: tr('Язык интерфейса мода', 'Mod interface language') },
+      [['auto', tr('Авто', 'Auto')], ['ru', 'Русский'], ['en', 'English']].map(([v, t]) => h('option', { value: v }, t)));
+    sel.value = settings.lang;
+    sel.addEventListener('change', () => { settings.lang = sel.value; saveSettings(); relocalize(); });
+    return h('label', { class: 'vxp-inline' }, h('span', null, '🌐 ' + tr('Язык', 'Language')), sel);
+  }
+  /** Пересобрать интерфейс на новом языке. */
+  function relocalize() {
+    let idx = null;
+    if (studio) { idx = studio.index; if (studio.dirty && studio.model) studio.save(false); studio.close(); }
+    const p = qs('#vxp-panel'); if (p) p.remove();
+    panel.root = null;
+    ensureMounted();
+    if (idx != null) openStudio(idx);
+  }
   const panel = { root: null, editor: null, takeRef: null, refRef: null, lastQueueSig: '', bufInfo: null };
 
   function section(id, title, ...body) {
@@ -1431,7 +1455,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
   }
   function guideCheckbox() {
     const cb = h('input', { type: 'checkbox' });
-    const lab = h('label', { class: 'vxp-check' }, cb, 'Слушать оригинал при записи');
+    const lab = h('label', { class: 'vxp-check' }, cb, tr('Слушать оригинал при записи', 'Hear the original while recording'));
     cb.addEventListener('change', () => {
       const nat = qs('.recording-guide-toggle');
       if (!nat || nat.disabled) { cb.checked = false; return; }
@@ -1440,7 +1464,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     lab._sync = () => {
       const nat = qs('.recording-guide-toggle'), ok = nat && !nat.disabled;
       cb.disabled = !ok; lab.classList.toggle('disabled', !ok);
-      lab.title = ok ? 'Во время записи в наушниках звучит оригинальная реплика' : 'Сейчас недоступно (не ваш ход или режим игры не поддерживает)';
+      lab.title = ok ? tr('Во время записи в наушниках звучит оригинальная реплика', 'The original line plays in your headphones while recording') : tr('Сейчас недоступно (не ваш ход или режим игры не поддерживает)', 'Unavailable now (not your turn, or the game mode doesn\'t support it)');
       cb.checked = !!(nat && nat.getAttribute('aria-pressed') === 'true');
     };
     widgets.add(lab);
@@ -1457,10 +1481,11 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     panel.bufInfo = h('div', { class: 'vxp-hint' });
     panel.queueBox = h('div', { class: 'vxp-sec', 'data-sec': 'queue', style: 'display:none' });
     const root = h('div', { class: 'vxp-panel', id: 'vxp-panel' },
-      section('tracks', 'Дорожки', editor.root, panel.bufInfo),
-      section('fx', 'Обработка', fxControls(nativeTarget)),
-      section('mic', 'Запись', micControls(), guideCheckbox(), timingControls()),
-      panel.queueBox);
+      section('tracks', tr('Дорожки', 'Tracks'), editor.root, panel.bufInfo),
+      section('fx', tr('Обработка', 'Processing'), fxControls(nativeTarget)),
+      section('mic', tr('Запись', 'Recording'), micControls(), guideCheckbox(), timingControls()),
+      panel.queueBox,
+      section('app', tr('Настройки', 'Settings'), langControl()));
     deck.append(root);
     panel.root = root;
     panel.lastQueueSig = '';
@@ -1470,7 +1495,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
   function playNativeTogether() {
     if (player.playing) return player.stop();
     const ed = panel.editor;
-    if (!ed.ref) return toast('Нет оригинала');
+    if (!ed.ref) return toast(tr('Нет оригинала', 'No original'));
     const t = currentTake();
     const tracks = [{ samples: ed.ref.samples, sr: ed.ref.sr, startSec: 0, gain: 0.55 }];
     let dur = ed.ref.samples.length / ed.ref.sr;
@@ -1500,9 +1525,9 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     }
     // строка о буфере
     let info = '', warn = false;
-    if (nativeRec.phase === 'tail') { info = '● Буфер: дописываю ещё ' + Math.max(0, Math.ceil((nativeRec.tailEnd - performance.now()) / 1000)) + ' с — можно продолжать говорить'; warn = true; }
-    else if (pa && takeModels.get(pa) && takeModels.get(pa).ext) info = 'Буфер +' + Math.round(takeModels.get(pa).extTail) + ' с: опоздавшую фразу тяните влево, в светлое окно.';
-    else info = 'Тяните красную дорожку мышью. В игру уходит то, что в светлом окне.';
+    if (nativeRec.phase === 'tail') { info = tr('● Буфер: дописываю ещё ', '● Buffer: still recording ') + Math.max(0, Math.ceil((nativeRec.tailEnd - performance.now()) / 1000)) + tr(' с — можно продолжать говорить', ' s — you can keep talking'); warn = true; }
+    else if (pa && takeModels.get(pa) && takeModels.get(pa).ext) info = tr('Буфер +', 'Buffer +') + Math.round(takeModels.get(pa).extTail) + tr(' с: опоздавшую фразу тяните влево, в светлое окно.', ' s: drag a late phrase left, into the light window.');
+    else info = tr('Тяните красную дорожку мышью. В игру уходит то, что в светлом окне.', 'Drag the red track with the mouse. What goes into the game is what is in the light window.');
     if (panel.bufInfo.textContent !== info) panel.bufInfo.textContent = info;
     panel.bufInfo.classList.toggle('warn', warn);
     syncWidgets();
@@ -1514,7 +1539,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     if (live) panel.editor.setLive(live);
   });
   onBus('native-rec', () => refreshPanel(true));
-  onBus('native-ext', () => { panel.takeRef = null; refreshPanel(true); toast('Буфер записи добавлен к дублю'); });
+  onBus('native-ext', () => { panel.takeRef = null; refreshPanel(true); toast(tr('Буфер записи добавлен к дублю', 'Recording buffer added to the take')); });
 
   function renderQueueBox() {
     const box = panel.queueBox; if (!box) return;
@@ -1533,16 +1558,16 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     cb.addEventListener('change', () => { settings.autoSubmit = cb.checked; saveSettings(); trySubmit(); });
     box.replaceChildren(
       h('div', { class: 'vxp-title', onclick: () => { settings.collapsed.queue = !settings.collapsed.queue; saveSettings(); panel.lastQueueSig = ''; renderQueueBox(); } },
-        h('span', null, 'Мои реплики ', h('span', { class: 'vxp-badge' }, done + '/' + mine.length)), h('span', { class: 'vxp-caret' }, '▾')),
-      h('div', { class: 'vxp-status' }, cur ? (cur.playerId === myId() ? h('b', null, 'Сейчас ваш ход') : ['Ход: ', h('b', null, cur.playerName || 'игрок'), ' · реплика ' + (g.currentAssignmentIndex + 1) + '/' + g.assignments.length]) : ''),
+        h('span', null, tr('Мои реплики', 'My lines') + ' ', h('span', { class: 'vxp-badge' }, done + '/' + mine.length)), h('span', { class: 'vxp-caret' }, '▾')),
+      h('div', { class: 'vxp-status' }, cur ? (cur.playerId === myId() ? h('b', null, tr('Сейчас ваш ход', 'It\'s your turn')) : [tr('Ход: ', 'Turn: '), h('b', null, cur.playerName || tr('игрок', 'player')), tr(' · реплика ', ' · line ') + (g.currentAssignmentIndex + 1) + '/' + g.assignments.length]) : ''),
       h('div', { class: 'vxp-lines' }, mine.map((a) => {
         const st = lineStatus(g, a);
         return h('div', { class: 'vxp-line' + (st === 'now' ? ' active' : ''), title: a.caption, onclick: () => { if (st !== 'sent') openStudio(a.index); } },
-          h('span', { class: 'n' }, '#' + (a.index + 1)), h('span', { class: 'c' }, a.caption || a.title || a.clipId), h('span', { class: 'vxp-chip ' + st }, STATUS_TEXT[st]));
+          h('span', { class: 'n' }, '#' + (a.index + 1)), h('span', { class: 'c' }, a.caption || a.title || a.clipId), h('span', { class: 'vxp-chip ' + st }, statusText(st)));
       })),
       h('div', { class: 'vxp-row' },
-        h('button', { class: 'vxp-btn primary wide', type: 'button', disabled: !left.length, onclick: () => openStudio(left[0] && left[0].index) }, left.length ? '🎙 Записать все заранее (' + left.length + ')' : '✓ Все реплики готовы')),
-      h('label', { class: 'vxp-check', title: 'Когда подходит ваша очередь, заранее записанная реплика отправляется сама' }, cb, 'Авто-отправка в мой ход'));
+        h('button', { class: 'vxp-btn primary wide', type: 'button', disabled: !left.length, onclick: () => openStudio(left[0] && left[0].index) }, left.length ? tr('🎙 Записать все заранее (', '🎙 Record all in advance (') + left.length + ')' : tr('✓ Все реплики готовы', '✓ All lines ready'))),
+      h('label', { class: 'vxp-check', title: tr('Когда подходит ваша очередь, заранее записанная реплика отправляется сама', 'When your turn comes, a pre-recorded line is submitted automatically') }, cb, tr('Авто-отправка в мой ход', 'Auto-submit on my turn')));
   }
   onBus('queue', () => { panel.lastQueueSig = ''; renderQueueBox(); studio && studio.renderList(); });
   onBus('room', () => { renderQueueBox(); studio && studio.renderList(); });
@@ -1573,8 +1598,8 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
   function openStudio(index) {
     syncRoomFromApp();
     const g = room.state && room.state.game, pack = app.pack();
-    if (!g) return toast('Игра ещё не началась', 'err');
-    if (!pack) return toast('Мод с клипами не загружен на этой странице', 'err');
+    if (!g) return toast(tr('Игра ещё не началась', 'The game hasn\'t started yet'), 'err');
+    if (!pack) return toast(tr('Мод с клипами не загружен на этой странице', 'Clip data isn\'t loaded on this page'), 'err');
     if (studio) studio.close();
     studio = new Studio(pack);
     studio.select(index != null ? index : (myLines()[0] || {}).index);
@@ -1596,33 +1621,34 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
         onPlay: () => this.playMine(true),
       });
       this.editor.canvas.classList.add('big');
-      this.btnRec = h('button', { class: 'vxp-btn rec wide', type: 'button', onclick: () => this.toggleRec() }, '● Записать');
-      this.btnOrig = h('button', { class: 'vxp-btn', type: 'button', onclick: () => this.playOriginal() }, '▶ Оригинал');
-      this.btnMine = h('button', { class: 'vxp-btn', type: 'button', onclick: () => this.playMine(false) }, '▶ Моя запись');
-      this.btnSave = h('button', { class: 'vxp-btn primary wide', type: 'button', onclick: () => this.save(true) }, '✓ Сохранить → далее');
-      this.btnDel = h('button', { class: 'vxp-btn', type: 'button', title: 'Удалить из очереди', onclick: () => this.remove() }, '🗑');
+      this.btnRec = h('button', { class: 'vxp-btn rec wide', type: 'button', onclick: () => this.toggleRec() }, tr('● Записать', '● Record'));
+      this.btnOrig = h('button', { class: 'vxp-btn', type: 'button', onclick: () => this.playOriginal() }, tr('▶ Оригинал', '▶ Original'));
+      this.btnMine = h('button', { class: 'vxp-btn', type: 'button', onclick: () => this.playMine(false) }, tr('▶ Моя запись', '▶ My take'));
+      this.btnSave = h('button', { class: 'vxp-btn primary wide', type: 'button', onclick: () => this.save(true) }, tr('✓ Сохранить → далее', '✓ Save → next'));
+      this.btnDel = h('button', { class: 'vxp-btn', type: 'button', title: tr('Удалить из очереди', 'Remove from queue'), onclick: () => this.remove() }, '🗑');
       this.title = h('h3'); this.kicker = h('small');
       this.list = h('div', { class: 'vxp-lines' });
-      const guide = checkbox({ label: 'Слушать оригинал при записи', get: () => settings.studioGuide, set: (v) => { settings.studioGuide = v; saveSettings(); }, title: 'Нужны наушники' });
+      const guide = checkbox({ label: tr('Слушать оригинал при записи', 'Hear the original while recording'), get: () => settings.studioGuide, set: (v) => { settings.studioGuide = v; saveSettings(); }, title: 'Нужны наушники' });
       const fx = fxControls(() => this.model ? { model: this.model, apply: () => { this.dirty = true; this.refreshEditor(); } } : null);
-      this.root = h('div', { class: 'vxp-studio', role: 'dialog', 'aria-label': 'Запись реплик заранее' },
+      this.root = h('div', { class: 'vxp-studio', role: 'dialog', 'aria-label': tr('Запись реплик заранее', 'Record lines in advance') },
         h('div', { class: 'vxp-card' },
           h('div', { class: 'vxp-card-head' },
             h('div', null, this.kicker, this.title),
-            h('button', { class: 'vxp-btn icon', type: 'button', title: 'Закрыть (Esc)', onclick: () => this.close() }, '✕')),
+            h('button', { class: 'vxp-btn icon', type: 'button', title: tr('Закрыть (Esc)', 'Close (Esc)'), onclick: () => this.close() }, '✕')),
           h('div', { class: 'vxp-stagebox' },
             this.videoBox,
             h('div', { class: 'vxp-sub' }, this.subSpeaker, this.subText),
             this.editor.root,
             h('div', { class: 'vxp-row' }, this.btnRec, this.btnOrig, this.btnMine),
             h('div', { class: 'vxp-row' }, this.btnSave, this.btnDel),
-            h('div', { class: 'vxp-hint' }, 'Клавиши: R — запись/стоп · Пробел — моя запись · Enter — сохранить и далее · [ ] — сдвиг · A — авто · Esc — закрыть')),
+            h('div', { class: 'vxp-hint' }, tr('Клавиши: R — запись/стоп · Пробел — моя запись · Enter — сохранить и далее · [ ] — сдвиг · A — авто · Esc — закрыть', 'Keys: R — record/stop · Space — my take · Enter — save and next · [ ] — shift · A — auto · Esc — close'))),
           h('div', { class: 'vxp-side' },
-            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, 'Мои реплики')), this.list),
-            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, 'Обработка')), fx),
-            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, 'Запись')), micControls(), guide, timingControls()),
+            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, tr('Мои реплики', 'My lines'))), this.list),
+            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, tr('Обработка', 'Processing'))), fx),
+            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, tr('Запись', 'Recording'))), micControls(), guide, timingControls()),
+            h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-title' }, h('span', null, tr('Настройки', 'Settings'))), langControl()),
             h('div', { class: 'vxp-sec' }, h('div', { class: 'vxp-hint' },
-              'Записанные реплики ждут в очереди и отправляются сами, как только подходит ваш ход. Не закрывайте вкладку до конца игры.')))));
+              tr('Записанные реплики ждут в очереди и отправляются сами, как только подходит ваш ход. Не закрывайте вкладку до конца игры.', 'Recorded lines wait in the queue and are sent automatically when your turn comes. Keep this tab open until the game ends.'))))));
       this.keyHandler = (e) => this.onKey(e);
       document.addEventListener('keydown', this.keyHandler, true);
       document.body.append(this.root);
@@ -1657,10 +1683,10 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       this.list.replaceChildren(...mine.map((a) => {
         const st = lineStatus(g, a);
         return h('div', { class: 'vxp-line' + (a.index === this.index ? ' active' : ''), title: a.caption, onclick: () => { if (st !== 'sent' && st !== 'sending') this.select(a.index); } },
-          h('span', { class: 'n' }, '#' + (a.index + 1)), h('span', { class: 'c' }, a.caption || a.clipId), h('span', { class: 'vxp-chip ' + st }, STATUS_TEXT[st]));
+          h('span', { class: 'n' }, '#' + (a.index + 1)), h('span', { class: 'c' }, a.caption || a.clipId), h('span', { class: 'vxp-chip ' + st }, statusText(st)));
       }));
       const done = mine.filter((a) => ['sent', 'ready'].includes(lineStatus(g, a))).length;
-      this.kicker.textContent = 'Запись заранее · готово ' + done + '/' + mine.length;
+      this.kicker.textContent = tr('Запись заранее · готово ', 'Recording ahead · done ') + done + '/' + mine.length;
     }
     refreshEditor() { this.editor.set(this.ref, this.model); this.updateButtons(); }
     async select(index) {
@@ -1670,7 +1696,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       const a = g.assignments[index]; if (!a) return;
       this.index = index; this.assignment = a;
       this.clip = this.pack.clips.find((c) => c.id === a.clipId);
-      if (!this.clip) { toast('Клип ' + a.clipId + ' не найден в моде', 'err'); return; }
+      if (!this.clip) { toast(tr('Клип ' + a.clipId + ' не найден в моде', 'Clip ' + a.clipId + ' not found in the mod'), 'err'); return; }
       this.title.textContent = '#' + (index + 1) + ' · ' + (a.title || this.clip.title || '');
       this.subSpeaker.textContent = this.speakerName();
       this.subText.textContent = a.caption || this.clip.caption || '';
@@ -1701,7 +1727,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     clipDur() { return Math.max(0.5, this.ref ? this.ref.duration : (this.clip.videoEndSeconds - this.clip.videoStartSeconds) || 3); }
     updateButtons() {
       const recOn = !!this.rec;
-      this.btnRec.textContent = recOn ? '■ Стоп' : (this.model ? '● Перезаписать' : '● Записать');
+      this.btnRec.textContent = recOn ? tr('■ Стоп', '■ Stop') : (this.model ? tr('● Перезаписать', '● Re-record') : tr('● Записать', '● Record'));
       this.btnMine.disabled = recOn || !this.model;
       this.btnOrig.disabled = recOn;
       this.btnSave.disabled = recOn || !this.model;
@@ -1725,10 +1751,10 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       const tracks = [{ samples: out, sr: this.model.sr, startSec: 0, gain: 1 }];
       if (withRef && this.ref) tracks.push({ samples: this.ref.samples, sr: this.ref.sr, startSec: 0, gain: 0.55 });
       ed.setPlaying(withRef);
-      this.btnMine.textContent = withRef ? '▶ Моя запись' : '■ Стоп';
+      this.btnMine.textContent = withRef ? tr('▶ Моя запись', '▶ My take') : tr('■ Стоп', '■ Stop');
       player.play({ tracks, media, dur,
         onTick: (t) => { ed.playhead = t; ed.draw(); },
-        onEnd: () => { ed.playhead = null; ed.setPlaying(false); ed.draw(); this.btnMine.textContent = '▶ Моя запись'; this.video.pause(); try { this.video.currentTime = c.videoStartSeconds; } catch {} } });
+        onEnd: () => { ed.playhead = null; ed.setPlaying(false); ed.draw(); this.btnMine.textContent = tr('▶ Моя запись', '▶ My take'); this.video.pause(); try { this.video.currentTime = c.videoStartSeconds; } catch {} } });
     }
     async toggleRec() { if (this.counting) return; if (this.rec) this.stopRec(false); else await this.startRec(); }
     async startRec() {
@@ -1739,9 +1765,9 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
         const dev = app.mic(); const id = dev && dev.selectedDeviceId;
         const stream = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: id && id !== 'default' ? { exact: id } : undefined, echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
         track = stream.getAudioTracks()[0];
-      } catch (e) { toast('Микрофон недоступен: ' + e.message, 'err'); return; }
+      } catch (e) { toast(tr('Микрофон недоступен: ', 'Microphone unavailable: ') + e.message, 'err'); return; }
       let cap;
-      try { cap = await Capture.open(track, { noMonitor: false }); } catch (e) { track.stop(); toast('Не удалось начать запись: ' + e.message, 'err'); return; }
+      try { cap = await Capture.open(track, { noMonitor: false }); } catch (e) { track.stop(); toast(tr('Не удалось начать запись: ', 'Could not start recording: ') + e.message, 'err'); return; }
       const c = this.clip, dur = this.clipDur(), C = settings.countdown, start = c.videoStartSeconds || 0;
       const rec = this.rec = { cap, videoCtx: null, timers: [] };
       const winEnd = dur + 0.4;
@@ -1757,7 +1783,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       const mark = (perf) => {
         if (rec.videoCtx != null || this.rec !== rec) return;
         rec.videoCtx = cap.perfToCtx(perf);
-        this.cue.className = 'vxp-cue on rec'; this.cue.textContent = '● ЗАПИСЬ';
+        this.cue.className = 'vxp-cue on rec'; this.cue.textContent = tr('● ЗАПИСЬ', '● REC');
         if (settings.studioGuide && c.audioUrl) { this.guideEl.currentTime = 0; this.guideEl.volume = settings.guideVol; this.guideEl.play().catch(() => {}); }
         const tail = settings.tailSec;
         rec.timers.push(setTimeout(() => {
@@ -1765,7 +1791,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
           if (!tail) return this.stopRec(false);
           const tEnd = performance.now() + tail * 1000;
           this.cue.className = 'vxp-cue on tail';
-          const upd = () => { if (this.rec !== rec) return; const s = Math.ceil((tEnd - performance.now()) / 1000); this.cue.textContent = '● БУФЕР ' + s + ' с · R — стоп'; if (s > 0) rec.timers.push(setTimeout(upd, 250)); };
+          const upd = () => { if (this.rec !== rec) return; const s = Math.ceil((tEnd - performance.now()) / 1000); this.cue.textContent = tr('● БУФЕР ', '● BUFFER ') + s + tr(' с · R — стоп', ' s · R — stop'); if (s > 0) rec.timers.push(setTimeout(upd, 250)); };
           upd();
           rec.timers.push(setTimeout(() => this.stopRec(false), tail * 1000));
         }, winEnd * 1000 - Math.max(0, performance.now() - perf)));
@@ -1789,7 +1815,7 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       const ok = await countdown(C, { host: this.videoBox });
       this.counting = false;
       if (!ok) { this.stopRec(true); return; }
-      if (rec.videoCtx == null && this.rec === rec) { this.cue.className = 'vxp-cue on rec'; this.cue.textContent = '● ЗАПИСЬ'; }
+      if (rec.videoCtx == null && this.rec === rec) { this.cue.className = 'vxp-cue on rec'; this.cue.textContent = tr('● ЗАПИСЬ', '● REC'); }
     }
     stopRec(discard) {
       const rec = this.rec; if (!rec) return;
@@ -1817,16 +1843,16 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     save(next) {
       const g = room.state && room.state.game;
       if (!g || !this.model || this.index == null) return;
-      if (g.takes.some((t) => t.assignmentIndex === this.index)) { toast('Эта реплика уже отправлена', 'err'); return; }
+      if (g.takes.some((t) => t.assignmentIndex === this.index)) { toast(tr('Эта реплика уже отправлена', 'This line has already been sent'), 'err'); return; }
       queue.set(qKey(g, this.index), { index: this.index, clipId: this.assignment.clipId, model: this.model, status: 'ready', savedAt: Date.now() });
       this.dirty = false;
       emit('queue');
       trySubmit();
       if (!next) return;
-      toast('Реплика #' + (this.index + 1) + ' в очереди');
+      toast(tr('Реплика #' + (this.index + 1) + ' в очереди', 'Line #' + (this.index + 1) + ' queued'));
       const mine = myLines().filter((a) => ['todo', 'now'].includes(lineStatus(g, a)) && a.index !== this.index);
       const nxt = mine.find((a) => a.index > this.index) || mine[0];
-      if (nxt) this.select(nxt.index); else { toast('Все ваши реплики готовы — ждём остальных 🎉'); this.close(); }
+      if (nxt) this.select(nxt.index); else { toast(tr('Все ваши реплики готовы — ждём остальных 🎉', 'All your lines are ready — waiting for the others 🎉')); this.close(); }
     }
     remove() {
       const g = room.state && room.state.game; if (!g) return;
@@ -1847,5 +1873,5 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
     else if (e.key === ']' || e.key === 'ъ') { ed.nudge(e.shiftKey ? 50 : 10); e.preventDefault(); }
   }, true);
 
-  console.info('%cVoxalike+ ' + VERSION + ' загружен', 'color:#4ee7d2;font-weight:bold');
+  console.info('%cVoxalike+ ' + VERSION + ' loaded', 'color:#4ee7d2;font-weight:bold');
 })();
