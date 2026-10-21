@@ -16,28 +16,44 @@
   .links{display:flex;gap:6px;justify-content:space-between}
   .links a{flex:1;text-align:center;font-size:11px;font-weight:800;color:#4ee7d2;text-decoration:none;padding:6px 4px;border:1px solid rgba(78,231,210,.3);border-radius:6px}
   .links a:hover{background:rgba(78,231,210,.08)}
+  .upd{display:grid;gap:6px}
+  .upd .row{display:flex;gap:6px}
+  .upd button{flex:1;cursor:pointer;font:800 11px/1.2 inherit;font-family:inherit;color:#f7f7ff;background:rgba(247,247,255,.06);border:1px solid rgba(78,231,210,.3);border-radius:6px;padding:7px 4px}
+  .upd button:hover{background:rgba(78,231,210,.12)}
+  .upd button:disabled{opacity:.5;cursor:default}
+  #updMsg{font-size:11px;color:rgba(247,247,255,.75);min-height:14px}
+  #updMsg a{color:#4ee7d2;font-weight:800}
+  #updMsg.ok{color:#4ee7d2}
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1><img src="icons/icon48.png" alt="">Voxalike+ <small>v1.2.0</small></h1>
+  <h1><img src="icons/icon48.png" alt="">Voxalike+ <small id="ver">v1.3.0</small></h1>
   <ul>
-    <li>Две дорожки на сцене озвучки и сдвиг своей записи</li>
-    <li>Усиление микрофона и индикатор уровня</li>
-    <li>«Слушать оригинал» и «слушать себя» при записи</li>
-    <li>Запись всех своих реплик заранее с авто-отправкой</li>
-    <li>Питч, скорость, громкость, «под водой», эхо, срез низов</li>
-    <li>Монтаж: ножницы, перемещение и удаление кусков</li>
-    <li>Отсчёт 3-2-1, волна в реальном времени, буфер 5 с</li>
-    <li>Уведомление, когда подошёл ваш ход</li>
+    <li data-i18n="k1">Две дорожки на сцене озвучки и сдвиг своей записи</li>
+    <li data-i18n="k2">Усиление микрофона и индикатор уровня</li>
+    <li data-i18n="k3">«Слушать оригинал» и «слушать себя» при записи</li>
+    <li data-i18n="k4">Запись всех своих реплик заранее с авто-отправкой</li>
+    <li data-i18n="k5">Питч, скорость, громкость, «под водой», эхо, срез низов</li>
+    <li data-i18n="k6">Монтаж: ножницы, перемещение и удаление кусков</li>
+    <li data-i18n="k7">Отсчёт 3-2-1, волна в реальном времени, буфер 5 с</li>
+    <li data-i18n="k8">Уведомление, когда подошёл ваш ход</li>
   </ul>
-  <a class="btn" href="https://voxalike.com/" target="_blank" rel="noopener">Открыть Voxalike</a>
-  <div class="links">
-    <a href="https://github.com/BeshkekArt/voxalike-plus/issues/new/choose" target="_blank" rel="noopener">💡 Идея / ошибка</a>
-    <a href="https://github.com/BeshkekArt/voxalike-plus" target="_blank" rel="noopener">GitHub</a>
-    <a href="https://boosty.to/el_beshuele/donate" target="_blank" rel="noopener">❤️ Поддержать</a>
+  <a class="btn" data-i18n="k9" href="https://voxalike.com/" target="_blank" rel="noopener">Открыть Voxalike</a>
+  <div class="upd">
+    <div class="row">
+      <button id="btnCheck" type="button" data-i18n="k13">🔄 Проверить обновления</button>
+      <button id="btnReload" type="button" data-i18n="k14">↻ Перезагрузить расширение</button>
+    </div>
+    <div id="updMsg" role="status"></div>
   </div>
-  <p>Неофициальный мод: работает поверх voxalike.com на оригинальных серверах, не связан с разработчиками игры. Предоставляется «как есть», без гарантий — используйте на свой риск.</p>
+  <div class="links">
+    <a data-i18n="k10" href="https://github.com/BeshkekArt/voxalike-plus/issues/new/choose" target="_blank" rel="noopener">💡 Идея / ошибка</a>
+    <a href="https://github.com/BeshkekArt/voxalike-plus" target="_blank" rel="noopener">GitHub</a>
+    <a data-i18n="k11" href="https://boosty.to/el_beshuele/donate" target="_blank" rel="noopener">❤️ Поддержать</a>
+  </div>
+  <p data-i18n="k12">Неофициальный мод: работает поверх voxalike.com на оригинальных серверах, не связан с разработчиками игры. Предоставляется «как есть», без гарантий — используйте на свой риск.</p>
 </div>
+<script src="popup.js"></script>
 </body>
 </html>
