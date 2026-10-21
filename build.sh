@@ -13,7 +13,7 @@ node --check src/vxp-main.js
 rm -rf dist build && mkdir -p dist build/chrome build/firefox
 cp README.md extension/README.md
 for d in chrome firefox; do
-  cp -r extension/icons extension/popup.html extension/README.md build/$d/
+  cp -r extension/icons extension/popup.html extension/popup.js extension/README.md build/$d/
   cp src/vxp-main.js build/$d/vxp-main.js
 done
 cp extension/manifest.json build/chrome/manifest.json
@@ -32,6 +32,7 @@ const head=`// ==UserScript==
 // @namespace    voxalike-plus
 // @version      ${ver}
 // @description  Две дорожки со сдвигом, питч и громкость, усиление микрофона, отсчёт 3-2-1, буфер записи, запись всех своих реплик заранее
+// @description:en  Dual-track editor with shift, montage, pitch/speed/effects, mic gain, 3-2-1 countdown, recording buffer, record all your lines in advance (RU/EN interface)
 // @match        https://voxalike.com/*
 // @match        https://www.voxalike.com/*
 // @run-at       document-start

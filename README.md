@@ -31,6 +31,9 @@
 - 🔁 **Эхо** — небольшое эхо.
 - **Срез низов** — убирает гул и стук.
 
+**Язык интерфейса**
+- 🌐 **Русский и English.** По умолчанию язык выбирается по языку браузера; поменять можно в любой момент в блоке **«Настройки»** внизу панели (и в окне студии): Авто / Русский / English.
+
 **Запись**
 - 🎙 **Усиление микрофона** −12…+12 дБ в реальном времени + индикатор уровня.
 - ☑ **Слушать оригинал** и ☑ **слушать себя** во время записи (в наушниках).
@@ -59,6 +62,9 @@
 
 ### Юзерскрипт в любом браузере
 Tampermonkey / Violentmonkey → `voxalike-plus.user.js`. Не ставьте одновременно расширение и юзерскрипт.
+
+### Обновление
+Расширение, установленное из папки, не обновляется само. Нажмите на значок Voxalike+ → **«🔄 Проверить обновления»**: окно сравнит вашу версию с последним релизом на GitHub и даст ссылку. Скачайте архив, **замените файлы в папке расширения** и нажмите **«↻ Перезагрузить расширение»** (затем обновите вкладку voxalike.com). Единственный сетевой запрос мода вне игры — этот GET к `api.github.com`, и только по вашему нажатию. Юзерскрипт обновляется средствами Tampermonkey/Violentmonkey.
 
 ## Что мод делает и чего не делает
 
@@ -99,4 +105,21 @@ extension/manifest.firefox.json — манифест Firefox (MV3)
 ---
 
 ### English
-**Voxalike+** is an unofficial, open-source client-side mod for the browser dubbing game [Voxalike](https://voxalike.com). It runs on top of the original site and talks only to the original game servers. Features: dual-track editor with offset dragging and auto-align, pitch/gain/low-cut processing, live mic gain, monitoring, 3-2-1 countdown, a 5-second recording tail buffer, and "record all my lines in advance" with automatic submission when your turn comes in co-op rooms. **Not affiliated with or endorsed by the Voxalike developers. Provided "as is", without warranty of any kind — use at your own risk** (see [DISCLAIMER.md](DISCLAIMER.md)). Feature requests and bug reports are welcome via [Issues](https://github.com/BeshkekArt/voxalike-plus/issues).
+**Voxalike+** is an unofficial, open-source client-side mod for the browser dubbing game [Voxalike](https://voxalike.com). It runs on top of the original site and talks only to the original game servers.
+
+**Interface language:** English and Russian. It follows your browser language by default; switch it any time in the **Settings** block at the bottom of the mod panel (also in the studio window): Auto / Русский / English.
+
+**Features**
+- Two tracks on the dubbing stage (original + yours), drag to shift your take (5 ms steps, Alt = smooth), ◀ ▶ nudge buttons, `[` `]` keys, **Auto** align, **Together** playback, live waveform while recording.
+- **Montage:** ✂ scissors (`S`), select/move pieces (`V`, Shift+click, `Ctrl+A`), delete (`Delete`), undo (`Ctrl+Z`), reset. Non-destructive.
+- **Processing:** track volume, pitch ±12 semitones, speed ×0.5–×2 (pitch preserved), underwater, echo, low cut.
+- **Recording:** mic gain with level meter, hear the original / hear myself, “clean mic” (no browser echo cancellation / noise suppression, fixes dropouts), 3-2-1 countdown, 0–8 s recording buffer after the line.
+- **Co-op rooms:** record all your lines in advance — the mod submits each one automatically when your turn comes. The final video is shown as usual.
+
+**Update:** click the Voxalike+ icon → *Check for updates* (one request to `api.github.com`, only on click), replace the files in the extension folder, then *Reload extension*.
+
+**Install:** download from [Releases](https://github.com/BeshkekArt/voxalike-plus/releases/latest). Chrome/Edge/Brave/Opera: unzip `voxalike-plus-chrome-vX.Y.Z.zip` → `chrome://extensions` → Developer mode → *Load unpacked*. Firefox 128+: install `voxalike-plus.user.js` with Violentmonkey/Tampermonkey (recommended) or load the `.xpi` temporarily via `about:debugging`. Don't use the extension and the userscript at the same time.
+
+**Not affiliated with or endorsed by the Voxalike developers. Provided “as is”, without warranty of any kind (including security) — use at your own risk** (see [DISCLAIMER.md](DISCLAIMER.md)).
+
+**Ideas and bugs:** open an [Issue](https://github.com/BeshkekArt/voxalike-plus/issues/new/choose) — if a feature is useful and fits the project, we’ll add it. **Support:** voluntary, [boosty.to/el_beshuele](https://boosty.to/el_beshuele/donate) — the mod is free and will stay free.
