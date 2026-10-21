@@ -13,15 +13,19 @@ node --check src/vxp-main.js
 rm -rf dist build && mkdir -p dist build/chrome build/firefox
 cp README.md extension/README.md
 for d in chrome firefox; do
-  cp -r extension/icons extension/popup.html extension/popup.js extension/README.md build/$d/
-  cp src/vxp-main.js build/$d/vxp-main.js
+  cp -rp extension/icons extension/popup.html extension/popup.js extension/README.md build/$d/
+  cp -p src/vxp-main.js build/$d/vxp-main.js
 done
-cp extension/manifest.json build/chrome/manifest.json
-cp extension/manifest.firefox.json build/firefox/manifest.json
+cp -p extension/manifest.json build/chrome/manifest.json
+cp -p extension/manifest.firefox.json build/firefox/manifest.json
 cp src/vxp-main.js extension/vxp-main.js
 
-(cd build/chrome && zip -qr "../../dist/voxalike-plus-chrome-v${VER}.zip" .)
-(cd build/firefox && zip -qr "../../dist/voxalike-plus-firefox-v${VER}.xpi" .)
+# Воспроизводимая сборка: одинаковые байты архива при одинаковом содержимом файлов,
+# независимо от времени запуска сборки (фиксируем mtime и сортируем порядок файлов).
+find build -exec touch -h -t 202601010000 {} +
+zip_repro() { (cd "$1" && find . -type f | LC_ALL=C sort | zip -qrX "../../dist/$2" -@); }
+zip_repro build/chrome "voxalike-plus-chrome-v${VER}.zip"
+zip_repro build/firefox "voxalike-plus-firefox-v${VER}.xpi"
 
 # Юзерскрипт: код внедряется тегом <script>, поэтому всегда работает в контексте страницы
 node -e '
