@@ -1738,7 +1738,14 @@ canvas.vxp-tracks:focus{outline:1px solid rgba(78,231,210,.45);outline-offset:1p
       if (player.playing) return player.stop();
       const c = this.clip; if (!c) return;
       const dur = (c.videoEndSeconds || c.videoStartSeconds + this.clipDur()) - c.videoStartSeconds;
-      player.play({ media: [{ el: this.video, from: c.videoStartSeconds, muted: false, vol: 1 }], dur,
+      // Звук оригинала берём из отдельных дорожек мода (vocal + backing), а не из видео:
+      // в модах, где аудио вырезано из видеоряда, у <video> звука нет. Видео играет без звука.
+      // Если вокальная дорожка не декодировалась — запасной вариант: звук самого видео.
+      const useTracks = !!(this.ref && this.ref.samples);
+      const media = [{ el: this.video, from: c.videoStartSeconds, muted: useTracks, vol: 1 }];
+      if (useTracks && this.backing) media.push({ el: this.backing, from: c.videoStartSeconds, vol: 0.6 });
+      const tracks = useTracks ? [{ samples: this.ref.samples, sr: this.ref.sr, startSec: 0, gain: 1 }] : [];
+      player.play({ tracks, media, dur,
         onEnd: () => { this.video.pause(); this.video.muted = true; try { this.video.currentTime = c.videoStartSeconds; } catch {} } });
     }
     playMine(withRef) {
