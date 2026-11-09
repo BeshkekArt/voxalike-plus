@@ -3,7 +3,7 @@
 // (один GET-запрос к api.github.com; никакие данные о вас не отправляются).
 (function () {
   var api = typeof browser !== 'undefined' && browser.runtime ? browser : chrome;
-  var REPO = 'BeshkekArt/voxalike-plus';
+  var REPO = 'TheRose20/voxalike-plus-ordaxEd';
   var EN = {
     k1: 'Dual tracks on the dubbing stage and shifting your take',
     k2: 'Mic gain and level meter',
@@ -15,7 +15,7 @@
     k8: 'Notification when your turn comes',
     k9: 'Open Voxalike',
     k10: '💡 Idea / bug',
-    k11: '❤️ Support',
+    k11: '❤️ Support original author of Voxalike+',
     k12: 'Unofficial mod: runs on top of voxalike.com on the original servers and is not affiliated with the game\'s developers. Provided “as is”, without warranty — use at your own risk.',
     k13: '🔄 Check for updates',
     k14: '↻ Reload extension'

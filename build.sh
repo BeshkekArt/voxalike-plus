@@ -1,58 +1,35 @@
 #!/usr/bin/env bash
-# Сборка Voxalike+:
-#   dist/voxalike-plus-chrome-vX.zip   — Chrome / Edge / Яндекс / Opera / Brave
-#   dist/voxalike-plus-firefox-vX.xpi  — Firefox 128+
-#   dist/voxalike-plus.user.js         — Tampermonkey / Violentmonkey (любой браузер)
+# Сборка Voxalike+OrdaxEd:
+#   dist/voxalike-plus-ordaxed-chrome-vX.zip   — Chrome / Edge / Яндекс / Opera / Brave
+#   dist/voxalike-plus-ordaxed-firefox-vX.xpi  — Firefox 128+ (без подписи: временная загрузка / Developer Edition)
+#   dist/voxalike-plus-ordaxed.user.js         — Tampermonkey / Violentmonkey (любой браузер)
+#   extension-build/                           — распакованная папка для «Загрузить распакованное»
 set -euo pipefail
 cd "$(dirname "$0")"
 VER=$(node -p "require('./extension/manifest.json').version")
-FFVER=$(node -p "require('./extension/manifest.firefox.json').version")
-[ "$VER" = "$FFVER" ] || { echo "Версии манифестов не совпадают: $VER vs $FFVER"; exit 1; }
-node --check src/vxp-main.js
+
+for f in src/vxp-*.js; do node --check "$f"; done
 
 rm -rf dist build && mkdir -p dist build/chrome build/firefox
-cp README.md extension/README.md
 for d in chrome firefox; do
-  cp -rp extension/icons extension/popup.html extension/popup.js extension/README.md build/$d/
-  cp -p src/vxp-main.js build/$d/vxp-main.js
+  cp -rp extension/icons extension/popup.html extension/popup.js build/$d/
+  cp README.md build/$d/README.md
+  for f in main bg fx room; do cp -p "src/vxp-$f.js" "build/$d/vxp-$f.js"; done
+  node scripts/embed-models.js "build/$d/vxp-denoise.js"
+  node --check "build/$d/vxp-denoise.js"
 done
 cp -p extension/manifest.json build/chrome/manifest.json
-cp -p extension/manifest.firefox.json build/firefox/manifest.json
-cp src/vxp-main.js extension/vxp-main.js
+node scripts/make-firefox-manifest.js extension/manifest.json build/firefox/manifest.json
 
-# Воспроизводимая сборка: одинаковые байты архива при одинаковом содержимом файлов,
-# независимо от времени запуска сборки (фиксируем mtime и сортируем порядок файлов).
+# Юзерскрипт из тех же файлов, что и расширение
+node scripts/make-userscript.js build/chrome dist/voxalike-plus-ordaxed.user.js
+node --check dist/voxalike-plus-ordaxed.user.js
+
+# Воспроизводимые архивы: фиксированное время и порядок файлов
 find build -exec touch -h -t 202601010000 {} +
 zip_repro() { (cd "$1" && find . -type f | LC_ALL=C sort | zip -qrX "../../dist/$2" -@); }
-zip_repro build/chrome "voxalike-plus-chrome-v${VER}.zip"
-zip_repro build/firefox "voxalike-plus-firefox-v${VER}.xpi"
+zip_repro build/chrome  "voxalike-plus-ordaxed-chrome-v${VER}.zip"
+zip_repro build/firefox "voxalike-plus-ordaxed-firefox-v${VER}.xpi"
 
-# Юзерскрипт: код внедряется тегом <script>, поэтому всегда работает в контексте страницы
-node -e '
-const fs=require("fs"); const ver=process.argv[1];
-const code=fs.readFileSync("src/vxp-main.js","utf8");
-const head=`// ==UserScript==
-// @name         Voxalike+
-// @namespace    voxalike-plus
-// @version      ${ver}
-// @description  Две дорожки со сдвигом, питч и громкость, усиление микрофона, отсчёт 3-2-1, буфер записи, запись всех своих реплик заранее
-// @description:en  Dual-track editor with shift, montage, pitch/speed/effects, mic gain, 3-2-1 countdown, recording buffer, record all your lines in advance (RU/EN interface)
-// @match        https://voxalike.com/*
-// @match        https://www.voxalike.com/*
-// @run-at       document-start
-// @grant        none
-// ==/UserScript==
-`;
-const body=`(function () {
-  var code = ${JSON.stringify(code)};
-  var s = document.createElement("script");
-  s.textContent = code;
-  (document.head || document.documentElement).appendChild(s);
-  s.remove();
-})();
-`;
-fs.writeFileSync("dist/voxalike-plus.user.js", head + body);
-' "$VER"
-node --check dist/voxalike-plus.user.js
-rm -rf build
+rm -rf extension-build && cp -rp build/chrome extension-build && rm -rf build
 echo "Built v${VER}:"; ls -la dist

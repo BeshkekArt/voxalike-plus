@@ -6,3 +6,7 @@ package-lock.json
 extension/vxp-main.js
 extension/README.md
 .DS_Store
+
+dist/
+extension-build/
+build/
