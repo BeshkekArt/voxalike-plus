@@ -11,6 +11,17 @@
 
 ---
 
+## Скриншоты
+
+<img width="1920" height="1032" alt="main" src="https://github.com/user-attachments/assets/9d107caa-54c9-443b-b7ab-7abd3b1267da" />
+<img width="1920" height="1080" alt="workshop" src="https://github.com/user-attachments/assets/d5ddef71-5c5f-41ed-868f-08a313c8c3ae" />
+<img width="914" height="834" alt="circles" src="https://github.com/user-attachments/assets/6de7bcb1-7678-4e03-9778-045c8fa40312" />
+<img width="1071" height="785" alt="phone" src="https://github.com/user-attachments/assets/a82b1edb-8a74-4f83-9557-112ddd8e916f" />
+<img width="1010" height="952" alt="studio" src="https://github.com/user-attachments/assets/552c6892-82df-492a-aa84-162536ecb934" />
+
+
+
+
 ## Чем форк отличается от оригинала
 
 Voxalike+OrdaxEd развивает Voxalike+ 1.3.0 и добавляет:
